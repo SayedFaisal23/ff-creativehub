@@ -1,0 +1,58 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8000"
+    volumes:
+      - .:/var/www/html
+      - ${NAS_HOST_PATH:-./storage/app/nas}:/mnt/creative-nas
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8888
+      FILESYSTEM_DISK: nas
+      NAS_STORAGE_PATH: /mnt/creative-nas
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: creative_monitor
+      DB_USERNAME: creative_monitor
+      DB_PASSWORD: creative_monitor
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: creative_monitor
+      MYSQL_USER: creative_monitor
+      MYSQL_PASSWORD: creative_monitor
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    ports:
+      - "${PHPMYADMIN_PORT:-8081}:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 256M
+      MEMORY_LIMIT: 512M
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
