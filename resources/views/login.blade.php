@@ -34,13 +34,19 @@
         <form method="post" action="{{ route('login.store') }}" class="login-form">
           @csrf
           <div class="form-field">
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" value="{{ old('email') }}" autocomplete="email" required autofocus>
+            <label for="email">Staff</label>
+            <select id="email" name="email" autocomplete="email" required autofocus>
+              @foreach ($users as $user)
+                <option value="{{ $user->email }}" @selected(old('email') === $user->email)>
+                  {{ $user->name }} - {{ $user->role }} - {{ $user->email }}
+                </option>
+              @endforeach
+            </select>
           </div>
 
           <div class="form-field">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <input id="password" name="password" type="password" value="password" autocomplete="current-password" required>
           </div>
 
           <button class="button primary" type="submit">Login</button>

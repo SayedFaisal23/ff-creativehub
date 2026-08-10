@@ -34,13 +34,20 @@
         <form method="post" action="<?php echo e(route('login.store')); ?>" class="login-form">
           <?php echo csrf_field(); ?>
           <div class="form-field">
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" value="<?php echo e(old('email')); ?>" autocomplete="email" required autofocus>
+            <label for="email">Staff</label>
+            <select id="email" name="email" autocomplete="email" required autofocus>
+              <?php $__currentLoopData = $users; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $user): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                <option value="<?php echo e($user->email); ?>" <?php if(old('email') === $user->email): echo 'selected'; endif; ?>>
+                  <?php echo e($user->name); ?> - <?php echo e($user->role); ?> - <?php echo e($user->email); ?>
+
+                </option>
+              <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+            </select>
           </div>
 
           <div class="form-field">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <input id="password" name="password" type="password" value="password" autocomplete="current-password" required>
           </div>
 
           <button class="button primary" type="submit">Login</button>

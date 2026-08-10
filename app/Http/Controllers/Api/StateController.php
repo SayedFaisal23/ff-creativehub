@@ -11,6 +11,28 @@ use Illuminate\Support\Facades\Schema;
 
 class StateController
 {
+    private const REMOVED_DEMO_USER_EMAILS = [
+        'approver@example.com',
+        'audio@example.com',
+        'final.verifier@example.com',
+        'motion@example.com',
+        'production@example.com',
+        'publisher@example.com',
+        'script.checker@example.com',
+        'verifier@example.com',
+    ];
+
+    private const REMOVED_DEMO_USER_IDS = [
+        'app-1',
+        'aud-1',
+        'fv-1',
+        'des-1',
+        'prod-1',
+        'pub-1',
+        'chk-1',
+        'ver-1',
+    ];
+
     public function show(): JsonResponse
     {
         return response()->json($this->readState());
@@ -257,6 +279,8 @@ class StateController
             ]);
         }
 
+        $team = $this->activeTeam($state['team'] ?? []);
+
         $this->replace('projects', $state['projects'] ?? [], fn ($item) => [
             'id' => $item['id'],
             'name' => $item['name'] ?? 'Untitled Project',
@@ -282,7 +306,7 @@ class StateController
             'actual_completion' => $this->dateOrNull($item['actualCompletion'] ?? null),
             'estimated_hours' => $item['estimatedHours'] ?? 0,
             'actual_hours' => $item['actualHours'] ?? 0,
-            'workflow_stage' => $item['workflowStage'] ?? null,
+            'workflow_stage' => $this->normalizeWorkflowStage($item['workflowStage'] ?? null),
             'tags' => $this->encode($item['tags'] ?? []),
             'categories' => $this->encode($item['categories'] ?? []),
             'milestones' => $this->encode($item['milestones'] ?? []),
@@ -292,7 +316,9 @@ class StateController
             'access_members' => $this->encode($item['accessMembers'] ?? $item['assignedTeamMembers'] ?? []),
         ]);
 
-        $this->replace('tasks', $state['tasks'] ?? [], fn ($item) => [
+        $tasks = array_map(fn ($item) => $this->normalizeTaskAssignment($item, $team), $state['tasks'] ?? []);
+
+        $this->replace('tasks', $tasks, fn ($item) => [
             'id' => $item['id'],
             'project_id' => $item['projectId'] ?? '',
             'name' => $item['name'] ?? 'Untitled Task',
@@ -311,7 +337,7 @@ class StateController
             'dependencies' => $this->encode($item['dependencies'] ?? []),
             'revision_count' => $item['revisionCount'] ?? 0,
             'status' => $item['status'] ?? null,
-            'stage' => $item['stage'] ?? null,
+            'stage' => $this->normalizeWorkflowStage($item['stage'] ?? null),
             'progress_percent' => $item['progressPercent'] ?? 0,
             'last_progress_note' => $item['lastProgressNote'] ?? null,
             'last_progress_at' => $this->dateOrNull($item['lastProgressAt'] ?? null),
@@ -380,7 +406,7 @@ class StateController
             'created_at_date' => $this->dateOrNull($item['createdAt'] ?? null),
         ]);
 
-        $this->replace('users', $state['team'] ?? [], fn ($item) => [
+        $this->replace('users', $team, fn ($item) => [
             'id' => $item['id'],
             'name' => $item['name'] ?? 'Unnamed User',
             'email' => $item['email'] ?? null,
@@ -443,6 +469,222 @@ class StateController
         ]);
     }
 
+    private function activeTeam(array $team): array
+    {
+        return array_values(array_filter($team, function ($item): bool {
+            $email = strtolower((string) ($item['email'] ?? ''));
+            $id = (string) ($item['id'] ?? '');
+
+            return ! in_array($email, self::REMOVED_DEMO_USER_EMAILS, true)
+                && ! in_array($id, self::REMOVED_DEMO_USER_IDS, true);
+        }));
+    }
+
+    private function normalizeTaskAssignment(array $task, array $team): array
+    {
+        $task['stage'] = $this->normalizeWorkflowStage($task['stage'] ?? $task['name'] ?? null);
+        $assignee = $this->preferredTaskAssignee($task, $team);
+        $reviewer = $this->preferredTaskReviewer($task, $team, $assignee);
+
+        if ($this->shouldReplaceTaskPerson($task['assignee'] ?? null, $task, $team)) {
+            $task['assignee'] = $assignee;
+        }
+
+        if ($this->shouldReplaceTaskPerson($task['reviewer'] ?? null, $task, $team)) {
+            $task['reviewer'] = $reviewer;
+        }
+
+        return $task;
+    }
+
+    private function normalizeWorkflowStage(?string $value): string
+    {
+        $stage = trim((string) $value);
+        $stages = [
+            'Project Creation',
+            'Briefing and Planning',
+            'Scriptwriting',
+            'Script Checking',
+            'Fact Verification',
+            'Recording / Raw Ready',
+            'Editing Pool or Assignment',
+            'Editing',
+            'Version Tracking',
+            'QC Checking',
+            'Revision',
+            'Final Verification',
+            'Manager / Director Approval',
+            'Ready to Publish',
+            'Scheduled and Published',
+            'Project Completion',
+            'Analytics Update',
+        ];
+
+        if (in_array($stage, $stages, true)) {
+            return $stage;
+        }
+
+        $lower = strtolower($stage);
+        $map = [
+            'content request' => 'Project Creation',
+            'planning' => 'Briefing and Planning',
+            'research' => 'Fact Verification',
+            'script writing' => 'Scriptwriting',
+            'internal review' => 'Script Checking',
+            'management approval' => 'Manager / Director Approval',
+            'graphic design' => 'Version Tracking',
+            'video production' => 'Recording / Raw Ready',
+            'motion graphics' => 'Version Tracking',
+            'sound mixing' => 'Version Tracking',
+            'quality assurance' => 'QC Checking',
+            'final review' => 'Final Verification',
+            'client approval' => 'Manager / Director Approval',
+            'scheduling' => 'Ready to Publish',
+            'publishing' => 'Scheduled and Published',
+            'archive' => 'Project Completion',
+        ];
+
+        if (isset($map[$lower])) {
+            return $map[$lower];
+        }
+
+        if (str_contains($lower, 'brief') || str_contains($lower, 'plan')) return 'Briefing and Planning';
+        if (str_contains($lower, 'script') && str_contains($lower, 'check')) return 'Script Checking';
+        if (str_contains($lower, 'script')) return 'Scriptwriting';
+        if (str_contains($lower, 'final')) return 'Final Verification';
+        if (str_contains($lower, 'fact') || str_contains($lower, 'verify') || str_contains($lower, 'research')) return 'Fact Verification';
+        if (str_contains($lower, 'raw') || str_contains($lower, 'record') || str_contains($lower, 'production')) return 'Recording / Raw Ready';
+        if (str_contains($lower, 'pool') || str_contains($lower, 'assign')) return 'Editing Pool or Assignment';
+        if (str_contains($lower, 'version') || str_contains($lower, 'motion') || str_contains($lower, 'sound') || str_contains($lower, 'audio')) return 'Version Tracking';
+        if (str_contains($lower, 'edit') || str_contains($lower, 'subtitle') || str_contains($lower, 'graphics')) return 'Editing';
+        if (str_contains($lower, 'qc') || str_contains($lower, 'quality')) return 'QC Checking';
+        if (str_contains($lower, 'revision')) return 'Revision';
+        if (str_contains($lower, 'approval') || str_contains($lower, 'management')) return 'Manager / Director Approval';
+        if (str_contains($lower, 'ready') || str_contains($lower, 'schedule')) return 'Ready to Publish';
+        if (str_contains($lower, 'publish')) return 'Scheduled and Published';
+        if (str_contains($lower, 'complete') || str_contains($lower, 'archive')) return 'Project Completion';
+        if (str_contains($lower, 'analytics') || str_contains($lower, 'report')) return 'Analytics Update';
+
+        return 'Project Creation';
+    }
+
+    private function shouldReplaceTaskPerson(?string $name, array $task, array $team): bool
+    {
+        $person = collect($team)->firstWhere('name', $name);
+        if (! $person) {
+            return true;
+        }
+
+        $role = strtolower((string) ($person['role'] ?? ''));
+        $stage = $this->normalizeWorkflowStage($task['stage'] ?? $task['name'] ?? null);
+
+        if (in_array($role, ['admin', 'administrator'], true)) {
+            return true;
+        }
+
+        if (! in_array($stage, $this->workflowStagesForRole($role), true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function workflowStagesForRole(string $role): array
+    {
+        return match ($role) {
+            'creative manager' => [
+                'Project Creation',
+                'Briefing and Planning',
+                'Editing Pool or Assignment',
+                'Manager / Director Approval',
+                'Project Completion',
+                'Analytics Update',
+            ],
+            'coordinator' => [
+                'Briefing and Planning',
+                'Recording / Raw Ready',
+                'Ready to Publish',
+                'Project Completion',
+            ],
+            'scriptwriter' => [
+                'Scriptwriting',
+                'Script Checking',
+                'Fact Verification',
+            ],
+            'video editor' => [
+                'Editing Pool or Assignment',
+                'Editing',
+                'Version Tracking',
+                'Revision',
+            ],
+            'qc' => [
+                'QC Checking',
+                'Final Verification',
+                'Ready to Publish',
+                'Scheduled and Published',
+                'Analytics Update',
+            ],
+            default => [],
+        };
+    }
+
+    private function preferredTaskAssignee(array $task, array $team): string
+    {
+        $stage = $this->normalizeWorkflowStage($task['stage'] ?? $task['name'] ?? null);
+
+        if (in_array($stage, ['Scriptwriting', 'Script Checking', 'Fact Verification'], true)) {
+            return $this->staffNameByRole('Scriptwriter', $team);
+        }
+
+        if (in_array($stage, ['Editing Pool or Assignment', 'Editing', 'Version Tracking', 'Revision'], true)) {
+            return $this->staffNameByRole('Video Editor', $team);
+        }
+
+        if (in_array($stage, ['QC Checking', 'Final Verification', 'Scheduled and Published', 'Analytics Update'], true)) {
+            return $this->staffNameByRole('QC', $team);
+        }
+
+        if (in_array($stage, ['Project Creation', 'Manager / Director Approval', 'Project Completion'], true)) {
+            return $this->staffNameByRole('Creative Manager', $team);
+        }
+
+        if (in_array($stage, ['Briefing and Planning', 'Recording / Raw Ready', 'Ready to Publish'], true)) {
+            return $this->staffNameByRole('Coordinator', $team);
+        }
+
+        return $this->staffNameByRole('Coordinator', $team) ?: $this->staffNameByRole('Creative Manager', $team) ?: (string) ($task['assignee'] ?? '');
+    }
+
+    private function preferredTaskReviewer(array $task, array $team, string $assignee): string
+    {
+        $stage = $this->normalizeWorkflowStage($task['stage'] ?? $task['name'] ?? null);
+
+        if (in_array($stage, ['Editing', 'Version Tracking', 'Revision'], true)) {
+            return $this->staffNameByRole('QC', $team) ?: $assignee;
+        }
+
+        if (in_array($stage, ['QC Checking', 'Final Verification', 'Ready to Publish', 'Scheduled and Published'], true)) {
+            return $this->staffNameByRole('Creative Manager', $team) ?: $assignee;
+        }
+
+        if (in_array($stage, ['Scriptwriting', 'Script Checking', 'Fact Verification', 'Recording / Raw Ready'], true)) {
+            return $this->staffNameByRole('Coordinator', $team) ?: $assignee;
+        }
+
+        if (in_array($stage, ['Project Creation', 'Briefing and Planning', 'Manager / Director Approval', 'Project Completion'], true)) {
+            return $this->staffNameByRole('Creative Manager', $team) ?: $assignee;
+        }
+
+        return $this->staffNameByRole('QC', $team) ?: $this->staffNameByRole('Creative Manager', $team) ?: $assignee;
+    }
+
+    private function staffNameByRole(string $role, array $team): string
+    {
+        $person = collect($team)->firstWhere('role', $role);
+
+        return (string) ($person['name'] ?? '');
+    }
+
     private function replace(string $table, array $items, callable $map): void
     {
         DB::table($table)->delete();
@@ -493,14 +735,15 @@ class StateController
 
     private function canRoleOpenView(?string $role, ?string $view): bool
     {
-        $adminViews = ['dashboard', 'admin', 'projects', 'videos', 'tasks', 'qc', 'approvals', 'assets', 'team', 'reports', 'settings'];
-        $editorViews = ['editor', 'videos', 'tasks', 'projects', 'qc', 'assets', 'approvals'];
-        $clientViews = ['approvals', 'assets'];
-
         $allowed = match ($role) {
-            'Admin', 'Manager', 'Director', 'Creative Manager', 'Project Manager', 'Coordinator' => $adminViews,
-            'Client' => $clientViews,
-            default => $editorViews,
+            'Admin' => ['flow', 'dashboard', 'admin', 'projects', 'videos', 'tasks', 'qc', 'approvals', 'assets', 'team', 'reports', 'settings'],
+            'Creative Manager' => ['flow', 'projects', 'tasks', 'approvals', 'assets', 'reports'],
+            'Coordinator' => ['flow', 'projects', 'tasks', 'assets'],
+            'Scriptwriter' => ['flow', 'editor', 'projects', 'tasks'],
+            'Video Editor' => ['flow', 'editor', 'projects', 'videos', 'tasks', 'qc', 'assets'],
+            'QC' => ['flow', 'editor', 'videos', 'tasks', 'qc', 'assets'],
+            'Client' => ['approvals', 'assets'],
+            default => ['flow', 'editor', 'projects', 'tasks', 'assets'],
         };
 
         return in_array($view, $allowed, true);

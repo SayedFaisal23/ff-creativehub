@@ -8,26 +8,48 @@ const API_PROXY_QUEUE_URL = "/api/assets/proxy/queue";
 let saveTimer = null;
 let lastDeviceNotificationAt = 0;
 const AUTH_USER = parseAuthUser();
+const removedDemoUserEmails = new Set([
+  "approver@example.com",
+  "audio@example.com",
+  "final.verifier@example.com",
+  "motion@example.com",
+  "production@example.com",
+  "publisher@example.com",
+  "script.checker@example.com",
+  "verifier@example.com"
+]);
+const removedDemoUserIds = new Set([
+  "app-1",
+  "aud-1",
+  "fv-1",
+  "des-1",
+  "prod-1",
+  "pub-1",
+  "chk-1",
+  "ver-1"
+]);
 
-const workflowStages = [
-  "Content Request",
-  "Planning",
-  "Research",
-  "Script Writing",
-  "Internal Review",
-  "Management Approval",
-  "Graphic Design",
-  "Video Production",
-  "Editing",
-  "Motion Graphics",
-  "Sound Mixing",
-  "Quality Assurance",
-  "Final Review",
-  "Client Approval",
-  "Scheduling",
-  "Publishing",
-  "Archive"
+const endToEndWorkflow = [
+  { number: 1, stage: "Project Creation", owner: "Manager / Director", output: "New Project", action: "projects", actionLabel: "Create Project" },
+  { number: 2, stage: "Briefing and Planning", owner: "Manager / Coordinator", output: "Briefing Completed", action: "projects", actionLabel: "Briefs" },
+  { number: 3, stage: "Scriptwriting", owner: "Scriptwriter", output: "Script Submitted", action: "tasks", actionLabel: "Tasks" },
+  { number: 4, stage: "Script Checking", owner: "Script Checker", output: "Script Checked", action: "tasks", actionLabel: "Tasks" },
+  { number: 5, stage: "Fact Verification", owner: "Verifier", output: "Verified", action: "tasks", actionLabel: "Tasks" },
+  { number: 6, stage: "Recording / Raw Ready", owner: "Production / Coordinator", output: "Raw Material Ready", action: "assets", actionLabel: "NAS / Files" },
+  { number: 7, stage: "Editing Pool or Assignment", owner: "Editor / Manager", output: "Claimed or Assigned", action: "tasks", actionLabel: "Tasks" },
+  { number: 8, stage: "Editing", owner: "Video Editor", output: "Submitted for QC", action: "videos", actionLabel: "Editing Tracker" },
+  { number: 9, stage: "Version Tracking", owner: "Video Editor", output: "Current Version Recorded", action: "videos", actionLabel: "Versions" },
+  { number: 10, stage: "QC Checking", owner: "QC", output: "QC Passed or Revision Required", action: "qc", actionLabel: "QC" },
+  { number: 11, stage: "Revision", owner: "Assigned Staff", output: "Remarks Resolved", action: "tasks", actionLabel: "Tasks" },
+  { number: 12, stage: "Final Verification", owner: "Final Verifier", output: "Final Verified", action: "qc", actionLabel: "QC" },
+  { number: 13, stage: "Manager / Director Approval", owner: "Approver", output: "Approved", action: "approvals", actionLabel: "Approvals" },
+  { number: 14, stage: "Ready to Publish", owner: "Coordinator / Publisher", output: "Ready to Schedule", action: "assets", actionLabel: "Final Links" },
+  { number: 15, stage: "Scheduled and Published", owner: "Publisher", output: "Published", action: "assets", actionLabel: "Publishing" },
+  { number: 16, stage: "Project Completion", owner: "Manager / Coordinator", output: "Completed", action: "projects", actionLabel: "Complete" },
+  { number: 17, stage: "Analytics Update", owner: "System", output: "Performance and Reports Updated", action: "reports", actionLabel: "Reports" }
 ];
+
+const workflowStages = endToEndWorkflow.map((step) => step.stage);
 
 const departments = [
   "Creative Operations"
@@ -53,39 +75,41 @@ const workflowTemplates = [
 
 const workflowTaskTemplates = {
   "standard-video": [
-    { name: "Complete creative brief", stage: "Planning", role: "owner", reviewer: "owner", hours: 4, dueOffset: 1 },
-    { name: "Scriptwriting", stage: "Script Writing", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 3 },
-    { name: "Script checking", stage: "Internal Review", role: "checker", reviewer: "owner", hours: 3, dueOffset: 4 },
-    { name: "Fact verification", stage: "Research", role: "verifier", reviewer: "owner", hours: 3, dueOffset: 5 },
-    { name: "Raw material readiness", stage: "Video Production", role: "producer", reviewer: "owner", hours: 4, dueOffset: 6 },
+    { name: "Complete creative brief", stage: "Briefing and Planning", role: "owner", reviewer: "owner", hours: 4, dueOffset: 1 },
+    { name: "Scriptwriting", stage: "Scriptwriting", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 3 },
+    { name: "Script checking", stage: "Script Checking", role: "checker", reviewer: "owner", hours: 3, dueOffset: 4 },
+    { name: "Fact verification", stage: "Fact Verification", role: "verifier", reviewer: "owner", hours: 3, dueOffset: 5 },
+    { name: "Raw material readiness", stage: "Recording / Raw Ready", role: "producer", reviewer: "owner", hours: 4, dueOffset: 6 },
     { name: "Editing and version submission", stage: "Editing", role: "editor", reviewer: "qc", hours: 24, dueOffset: 10 },
-    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 4, dueOffset: 11 },
-    { name: "Revision pass", stage: "Editing", role: "editor", reviewer: "qc", hours: 8, dueOffset: 12 },
-    { name: "Final verification", stage: "Final Review", role: "verifier", reviewer: "approver", hours: 3, dueOffset: 13 },
-    { name: "Manager approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 14 },
-    { name: "Publishing setup", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 15 }
+    { name: "Record current version", stage: "Version Tracking", role: "editor", reviewer: "qc", hours: 2, dueOffset: 10 },
+    { name: "QC review", stage: "QC Checking", role: "qc", reviewer: "owner", hours: 4, dueOffset: 11 },
+    { name: "Revision pass", stage: "Revision", role: "editor", reviewer: "qc", hours: 8, dueOffset: 12 },
+    { name: "Final verification", stage: "Final Verification", role: "verifier", reviewer: "approver", hours: 3, dueOffset: 13 },
+    { name: "Manager approval", stage: "Manager / Director Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 14 },
+    { name: "Ready to publish", stage: "Ready to Publish", role: "publisher", reviewer: "owner", hours: 2, dueOffset: 15 },
+    { name: "Schedule and publish", stage: "Scheduled and Published", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 16 }
   ],
   "short-form": [
-    { name: "Brief and platform requirements", stage: "Planning", role: "owner", reviewer: "owner", hours: 3, dueOffset: 1 },
+    { name: "Brief and platform requirements", stage: "Briefing and Planning", role: "owner", reviewer: "owner", hours: 3, dueOffset: 1 },
     { name: "Edit short-form cut", stage: "Editing", role: "editor", reviewer: "qc", hours: 10, dueOffset: 4 },
-    { name: "Subtitle and graphics pass", stage: "Motion Graphics", role: "designer", reviewer: "editor", hours: 5, dueOffset: 5 },
-    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 3, dueOffset: 6 },
-    { name: "Approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 7 },
-    { name: "Schedule and publish", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 8 }
+    { name: "Subtitle and graphics pass", stage: "Version Tracking", role: "designer", reviewer: "editor", hours: 5, dueOffset: 5 },
+    { name: "QC review", stage: "QC Checking", role: "qc", reviewer: "owner", hours: 3, dueOffset: 6 },
+    { name: "Approval", stage: "Manager / Director Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 7 },
+    { name: "Schedule and publish", stage: "Scheduled and Published", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 8 }
   ],
   podcast: [
-    { name: "Episode brief and outline", stage: "Planning", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 2 },
-    { name: "Raw recording readiness", stage: "Video Production", role: "producer", reviewer: "owner", hours: 4, dueOffset: 4 },
+    { name: "Episode brief and outline", stage: "Scriptwriting", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 2 },
+    { name: "Raw recording readiness", stage: "Recording / Raw Ready", role: "producer", reviewer: "owner", hours: 4, dueOffset: 4 },
     { name: "Long-form edit", stage: "Editing", role: "editor", reviewer: "qc", hours: 30, dueOffset: 9 },
-    { name: "Audio mix", stage: "Sound Mixing", role: "audio", reviewer: "qc", hours: 10, dueOffset: 10 },
-    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 5, dueOffset: 11 },
-    { name: "Approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 12 },
-    { name: "Publish episode and clips", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 5, dueOffset: 14 }
+    { name: "Audio mix", stage: "Version Tracking", role: "audio", reviewer: "qc", hours: 10, dueOffset: 10 },
+    { name: "QC review", stage: "QC Checking", role: "qc", reviewer: "owner", hours: 5, dueOffset: 11 },
+    { name: "Approval", stage: "Manager / Director Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 12 },
+    { name: "Publish episode and clips", stage: "Scheduled and Published", role: "publisher", reviewer: "owner", hours: 5, dueOffset: 14 }
   ],
   "publishing-only": [
-    { name: "Confirm final files and captions", stage: "Final Review", role: "publisher", reviewer: "owner", hours: 2, dueOffset: 1 },
-    { name: "Approval check", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 1, dueOffset: 2 },
-    { name: "Schedule and publish", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 3 }
+    { name: "Confirm final files and captions", stage: "Ready to Publish", role: "publisher", reviewer: "owner", hours: 2, dueOffset: 1 },
+    { name: "Approval check", stage: "Manager / Director Approval", role: "approver", reviewer: "owner", hours: 1, dueOffset: 2 },
+    { name: "Schedule and publish", stage: "Scheduled and Published", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 3 }
   ]
 };
 
@@ -110,14 +134,15 @@ const approvalLevels = [
 ];
 
 const navItems = [
+  ["flow", "Flow", "grid"],
   ["dashboard", "Dashboard", "grid"],
   ["editor", "My Work", "check"],
-  ["projects", "Projects", "folder"],
-  ["videos", "Video Tracker", "camera"],
+  ["projects", "Projects / Briefs", "folder"],
+  ["videos", "Editing Tracker", "camera"],
   ["tasks", "Tasks", "check"],
-  ["qc", "QC", "stamp"],
+  ["qc", "QC / Revisions", "stamp"],
   ["approvals", "Approvals", "stamp"],
-  ["assets", "Server Links", "image"],
+  ["assets", "NAS / Files", "image"],
   ["team", "Staff", "users"],
   ["reports", "Reports", "chart"],
   ["admin", "Admin", "gear"],
@@ -164,6 +189,7 @@ const seed = {
     projectDepartment: "All",
     taskSearch: "",
     taskStatus: "All",
+    taskAssignee: "All",
     assetSearch: "",
     videoSearch: "",
     qcFilter: "All",
@@ -214,8 +240,8 @@ const seed = {
       targetAudience: "Urban families and food service buyers",
       platform: "YouTube, Instagram, TikTok",
       budget: 42000,
-      assignedManager: "Maya Noor",
-      assignedTeamMembers: ["Ari Lim", "Dina Rahman", "Ken Wong"],
+      assignedManager: "Creative Manager",
+      assignedTeamMembers: ["Project Coordinator", "Video Editor"],
       internalNotes: "Color grade must match brand refresh.",
       clientNotes: "Client wants warm product close-ups.",
       startDate: datePlus(-18),
@@ -253,8 +279,8 @@ const seed = {
       targetAudience: "Investors and board members",
       platform: "PDF, print, presentation",
       budget: 28000,
-      assignedManager: "Sofia Chan",
-      assignedTeamMembers: ["Nur Ali", "Peter Tan"],
+      assignedManager: "Creative Manager",
+      assignedTeamMembers: ["Project Coordinator", "Scriptwriter", "QC Reviewer"],
       internalNotes: "Financial charts require legal review.",
       clientNotes: "Conservative visual tone, avoid excessive illustration.",
       startDate: datePlus(-26),
@@ -263,7 +289,7 @@ const seed = {
       actualCompletion: "",
       estimatedHours: 150,
       actualHours: 128,
-      workflowStage: "Client Approval",
+      workflowStage: "Manager / Director Approval",
       tags: ["report", "print", "brand"],
       categories: ["Corporate"],
       milestones: ["Layout direction approved", "Charts delivered", "Proof sent"],
@@ -291,8 +317,8 @@ const seed = {
       targetAudience: "Enterprise operators and partners",
       platform: "Spotify, YouTube, LinkedIn",
       budget: 16500,
-      assignedManager: "Amir Hassan",
-      assignedTeamMembers: ["Jon Lee", "Ari Lim", "Rina Park"],
+      assignedManager: "Creative Manager",
+      assignedTeamMembers: ["Project Coordinator", "Scriptwriter", "Video Editor"],
       internalNotes: "Guest availability may slip recording date.",
       clientNotes: "Leadership wants intro music options.",
       startDate: datePlus(-9),
@@ -301,7 +327,7 @@ const seed = {
       actualCompletion: "",
       estimatedHours: 92,
       actualHours: 50,
-      workflowStage: "Sound Mixing",
+      workflowStage: "Version Tracking",
       tags: ["podcast", "audio", "internal"],
       categories: ["Owned Content"],
       milestones: ["Format approved", "Episode outline drafted"],
@@ -330,8 +356,8 @@ const seed = {
       targetAudience: "Retail shoppers and ecommerce customers",
       platform: "Website, store displays, catalog",
       budget: 24000,
-      assignedManager: "Leah Ong",
-      assignedTeamMembers: ["Dina Rahman", "Chris Yap"],
+      assignedManager: "Creative Manager",
+      assignedTeamMembers: ["Project Coordinator"],
       internalNotes: "Coordinate overnight access with store ops.",
       clientNotes: "Natural light feel, avoid heavy retouching.",
       startDate: datePlus(1),
@@ -340,7 +366,7 @@ const seed = {
       actualCompletion: "",
       estimatedHours: 130,
       actualHours: 6,
-      workflowStage: "Planning",
+      workflowStage: "Briefing and Planning",
       tags: ["photo", "retail", "catalog"],
       categories: ["Production"],
       milestones: ["Shot list approved"],
@@ -369,8 +395,8 @@ const seed = {
       targetAudience: "Public followers and event attendees",
       platform: "Instagram, Facebook, TikTok",
       budget: 12800,
-      assignedManager: "Sofia Chan",
-      assignedTeamMembers: ["Nur Ali", "Rina Park"],
+      assignedManager: "Creative Manager",
+      assignedTeamMembers: ["Project Coordinator", "QC Reviewer"],
       internalNotes: "Final source files archived.",
       clientNotes: "Approved with minor copy edits.",
       startDate: datePlus(-48),
@@ -379,7 +405,7 @@ const seed = {
       actualCompletion: datePlus(-8),
       estimatedHours: 82,
       actualHours: 79,
-      workflowStage: "Archive",
+      workflowStage: "Project Completion",
       tags: ["social", "motion", "event"],
       categories: ["Published"],
       milestones: ["Creative direction", "Motion versions", "Published"],
@@ -395,20 +421,20 @@ const seed = {
     }
   ],
   tasks: [
-    task("t-1", "p-1001", "Assemble rough cut v2", "Editing", "High", "Ari Lim", "Maya Noor", datePlus(-2), datePlus(1), 24, 18, "In Progress", 1),
-    task("t-2", "p-1001", "Export vertical cutdowns", "Editing", "Medium", "Dina Rahman", "Maya Noor", datePlus(1), datePlus(5), 18, 0, "Pending", 0),
-    task("t-3", "p-1001", "Sound pass and mix notes", "Sound Mixing", "Medium", "Ken Wong", "Ari Lim", datePlus(2), datePlus(6), 12, 0, "Pending", 0),
-    task("t-4", "p-1002", "Client proof annotations", "Client Approval", "High", "Peter Tan", "Sofia Chan", datePlus(-1), datePlus(1), 10, 8, "Waiting Approval", 2),
-    task("t-5", "p-1002", "Financial chart corrections", "Final Review", "Medium", "Nur Ali", "Sofia Chan", datePlus(-3), datePlus(0), 14, 12, "Revision Required", 3),
-    task("t-6", "p-1003", "Guest release forms", "Planning", "High", "Amir Hassan", "Maya Noor", datePlus(-4), datePlus(-1), 5, 2, "Blocked", 0),
-    task("t-7", "p-1003", "Intro music options", "Sound Mixing", "Medium", "Ken Wong", "Amir Hassan", datePlus(0), datePlus(2), 8, 4, "In Progress", 1),
-    task("t-8", "p-1004", "Location recce", "Planning", "Low", "Chris Yap", "Leah Ong", datePlus(2), datePlus(8), 12, 0, "Pending", 0),
-    task("t-9", "p-1005", "Archive final deliverables", "Archive", "Low", "Rina Park", "Sofia Chan", datePlus(-11), datePlus(-8), 5, 5, "Completed", 0)
+    task("t-1", "p-1001", "Assemble rough cut v2", "Editing", "High", "Video Editor", "QC Reviewer", datePlus(-2), datePlus(1), 24, 18, "In Progress", 1),
+    task("t-2", "p-1001", "Export vertical cutdowns", "Version Tracking", "Medium", "Video Editor", "QC Reviewer", datePlus(1), datePlus(5), 18, 0, "Pending", 0),
+    task("t-3", "p-1001", "QC review", "QC Checking", "Medium", "QC Reviewer", "Creative Manager", datePlus(2), datePlus(6), 12, 0, "Pending", 0),
+    task("t-4", "p-1002", "Manager approval", "Manager / Director Approval", "High", "Creative Manager", "Creative Manager", datePlus(-1), datePlus(1), 10, 8, "Waiting Approval", 2),
+    task("t-5", "p-1002", "Financial chart corrections", "Revision", "Medium", "Video Editor", "QC Reviewer", datePlus(-3), datePlus(0), 14, 12, "Revision Required", 3),
+    task("t-6", "p-1003", "Guest release forms", "Recording / Raw Ready", "High", "Project Coordinator", "Creative Manager", datePlus(-4), datePlus(-1), 5, 2, "Blocked", 0),
+    task("t-7", "p-1003", "Intro music options", "Version Tracking", "Medium", "Video Editor", "QC Reviewer", datePlus(0), datePlus(2), 8, 4, "In Progress", 1),
+    task("t-8", "p-1004", "Location recce", "Briefing and Planning", "Low", "Project Coordinator", "Creative Manager", datePlus(2), datePlus(8), 12, 0, "Pending", 0),
+    task("t-9", "p-1005", "Archive final deliverables", "Project Completion", "Low", "Creative Manager", "Project Coordinator", datePlus(-11), datePlus(-8), 5, 5, "Completed", 0)
   ],
   approvals: [
-    approval("a-1", "p-1001", "Hero film rough cut v2", "Creative Lead", "Maya Noor", "Pending", datePlus(1), "Video timing and product shots"),
-    approval("a-2", "p-1002", "Annual report proof", "Client", "Northstar Client", "Pending", datePlus(2), "Executive proof package"),
-    approval("a-3", "p-1003", "Podcast identity board", "Marketing Manager", "Sofia Chan", "Revision Requested", datePlus(-1), "Needs alternate cover art"),
+    approval("a-1", "p-1001", "Hero film rough cut v2", "Creative Lead", "Creative Manager", "Pending", datePlus(1), "Video timing and product shots"),
+    approval("a-2", "p-1002", "Annual report proof", "Creative Lead", "Creative Manager", "Pending", datePlus(2), "Executive proof package"),
+    approval("a-3", "p-1003", "Podcast identity board", "Creative Lead", "Creative Manager", "Revision Requested", datePlus(-1), "Needs alternate cover art"),
     approval("a-4", "p-1005", "Motion bumper", "Client", "Civic Client", "Approved", datePlus(-10), "Published")
   ],
   equipment: [],
@@ -420,14 +446,12 @@ const seed = {
     asset("as-5", "Retail_Shotlist.pdf", "PDF", "p-1004", "Brief", 1, ["shot-list", "photo"], "Approved", 5)
   ],
   team: [
-    person("u-1", "Maya Noor", "Creative Lead", "Creative Operations", "Admin", 88, ["Approval", "Resource planning", "Video review"]),
-    person("u-2", "Sofia Chan", "Design Manager", "Creative Operations", "Manager", 76, ["Design systems", "Client proofing"]),
-    person("u-3", "Ari Lim", "Video Editor", "Creative Operations", "Member", 92, ["Editing", "Color", "Motion"]),
-    person("u-4", "Dina Rahman", "Production Coordinator", "Creative Operations", "Member", 68, ["Production prep", "Raw readiness checks"]),
-    person("u-5", "Ken Wong", "Audio Producer", "Creative Operations", "Member", 54, ["Mixing", "Voice cleanup"]),
-    person("u-6", "Rina Park", "Motion Designer", "Creative Operations", "Freelancer", 61, ["Motion posts", "Explainers"]),
-    person("u-7", "Nur Ali", "Designer", "Creative Operations", "Member", 83, ["Reports", "Social templates"]),
-    person("u-8", "Chris Yap", "Publishing Assistant", "Publishing", "Limited", 45, ["Scheduling", "Live URL checks"])
+    person("admin-1", "Admin", "System Admin", "Creative Operations", "Admin", 0, ["System setup", "Full access"]),
+    person("mgr-1", "Creative Manager", "Creative Manager", "Creative Operations", "Creative Manager", 0, ["Project creation", "Approval", "Completion"]),
+    person("coord-1", "Project Coordinator", "Project Coordinator / Producer", "Creative Operations", "Coordinator", 0, ["Briefing", "Raw readiness", "NAS paths"]),
+    person("script-1", "Scriptwriter", "Scriptwriter / Checker", "Creative Operations", "Scriptwriter", 0, ["Scriptwriting", "Script checking", "Fact verification"]),
+    person("editor-1", "Video Editor", "Editor", "Creative Operations", "Video Editor", 0, ["Editing", "Version tracking", "Revisions"]),
+    person("qc-1", "QC Reviewer", "QC / Approver / Publisher", "Creative Operations", "QC", 0, ["QC checking", "Final verification", "Publishing"])
   ],
   announcements: [
     { id: "n-1", title: "Studio B unavailable", body: "Maintenance window booked for Friday afternoon.", date: datePlus(1), owner: "Operations" },
@@ -441,15 +465,16 @@ const seed = {
     logEntry("Client", "Requested revision on podcast identity board", datePlus(-1))
   ],
   workflowWeightage: [
-    { stage: "Briefing", weight: 5 },
+    { stage: "Briefing and Planning", weight: 5 },
     { stage: "Scriptwriting", weight: 10 },
     { stage: "Script Checking", weight: 5 },
     { stage: "Fact Verification", weight: 5 },
     { stage: "Recording / Raw Ready", weight: 10 },
     { stage: "Editing", weight: 35 },
-    { stage: "QC", weight: 15 },
-    { stage: "Final Verification and Approval", weight: 10 },
-    { stage: "Publishing", weight: 5 }
+    { stage: "QC Checking", weight: 15 },
+    { stage: "Final Verification", weight: 5 },
+    { stage: "Manager / Director Approval", weight: 5 },
+    { stage: "Scheduled and Published", weight: 5 }
   ],
   videos: [
     {
@@ -462,13 +487,13 @@ const seed = {
       duration: "60s master, 15s cutdowns",
       resolution: "4K master, 1080p social",
       aspectRatio: "16:9 / 9:16 / 1:1",
-      scriptwriter: "Ari Lim",
-      checker: "Sofia Chan",
-      verifier: "Maya Noor",
-      editor: "Ari Lim",
-      qc: "Maya Noor",
-      approver: "Maya Noor",
-      publisher: "Sofia Chan",
+      scriptwriter: "Scriptwriter",
+      checker: "Scriptwriter",
+      verifier: "Scriptwriter",
+      editor: "Video Editor",
+      qc: "QC Reviewer",
+      approver: "Creative Manager",
+      publisher: "QC Reviewer",
       currentStage: "Editing",
       detailedStatus: "Submitted for QC",
       progress: 75,
@@ -500,14 +525,14 @@ const seed = {
       duration: "30s",
       resolution: "1080x1920",
       aspectRatio: "9:16",
-      scriptwriter: "Ken Wong",
-      checker: "Sofia Chan",
-      verifier: "Maya Noor",
-      editor: "Ari Lim",
-      qc: "Maya Noor",
-      approver: "Maya Noor",
-      publisher: "Sofia Chan",
-      currentStage: "QC",
+      scriptwriter: "Scriptwriter",
+      checker: "Scriptwriter",
+      verifier: "Scriptwriter",
+      editor: "Video Editor",
+      qc: "QC Reviewer",
+      approver: "Creative Manager",
+      publisher: "QC Reviewer",
+      currentStage: "QC Checking",
       detailedStatus: "Revision Required",
       progress: 68,
       difficulty: 3,
@@ -625,12 +650,16 @@ function mergeDefaults(current, defaults) {
   merged.projects = safeList(merged.projects).map((project) => ({
     ...project,
     department: normalizeDepartmentName(project.department),
-    type: normalizeProjectType(project.type)
+    type: normalizeProjectType(project.type),
+    workflowStage: normalizeWorkflowStage(project.workflowStage)
   }));
-  merged.team = safeList(merged.team).map((personItem) => ({
-    ...personItem,
-    department: normalizeDepartmentName(personItem.department)
-  }));
+  merged.team = safeList(merged.team)
+    .filter(activeStaffMember)
+    .map((personItem) => ({
+      ...personItem,
+      department: normalizeDepartmentName(personItem.department)
+    }));
+  merged.tasks = safeList(merged.tasks).map((taskItem) => normalizeTaskAssignment(taskItem, merged.team));
   if (merged.ui.projectDepartment && merged.ui.projectDepartment !== "All") {
     merged.ui.projectDepartment = normalizeDepartmentName(merged.ui.projectDepartment);
   }
@@ -652,6 +681,99 @@ function mergeDefaults(current, defaults) {
 
 function normalizeDepartmentName(value) {
   return departments[0];
+}
+
+function normalizeWorkflowStage(value) {
+  const stage = String(value || "").trim();
+  if (workflowStages.includes(stage)) return stage;
+
+  const lower = stage.toLowerCase();
+  const map = {
+    "content request": "Project Creation",
+    planning: "Briefing and Planning",
+    research: "Fact Verification",
+    "script writing": "Scriptwriting",
+    "internal review": "Script Checking",
+    "management approval": "Manager / Director Approval",
+    "graphic design": "Version Tracking",
+    "video production": "Recording / Raw Ready",
+    "motion graphics": "Version Tracking",
+    "sound mixing": "Version Tracking",
+    "quality assurance": "QC Checking",
+    "final review": "Final Verification",
+    "client approval": "Manager / Director Approval",
+    scheduling: "Ready to Publish",
+    publishing: "Scheduled and Published",
+    archive: "Project Completion"
+  };
+
+  if (map[lower]) return map[lower];
+  if (lower.includes("brief") || lower.includes("plan")) return "Briefing and Planning";
+  if (lower.includes("script") && lower.includes("check")) return "Script Checking";
+  if (lower.includes("script")) return "Scriptwriting";
+  if (lower.includes("final")) return "Final Verification";
+  if (lower.includes("fact") || lower.includes("verify") || lower.includes("research")) return "Fact Verification";
+  if (lower.includes("raw") || lower.includes("record") || lower.includes("production")) return "Recording / Raw Ready";
+  if (lower.includes("pool") || lower.includes("assign")) return "Editing Pool or Assignment";
+  if (lower.includes("version") || lower.includes("motion") || lower.includes("sound") || lower.includes("audio")) return "Version Tracking";
+  if (lower.includes("edit") || lower.includes("subtitle") || lower.includes("graphics")) return "Editing";
+  if (lower.includes("qc") || lower.includes("quality")) return "QC Checking";
+  if (lower.includes("revision")) return "Revision";
+  if (lower.includes("approval") || lower.includes("management")) return "Manager / Director Approval";
+  if (lower.includes("ready") || lower.includes("schedule")) return "Ready to Publish";
+  if (lower.includes("publish")) return "Scheduled and Published";
+  if (lower.includes("complete") || lower.includes("archive")) return "Project Completion";
+  if (lower.includes("analytics") || lower.includes("report")) return "Analytics Update";
+  return workflowStages[0];
+}
+
+function activeStaffMember(personItem) {
+  const email = String(personItem.email || "").toLowerCase();
+  const id = String(personItem.id || "");
+  return !removedDemoUserEmails.has(email) && !removedDemoUserIds.has(id);
+}
+
+function normalizeTaskAssignment(taskItem, team = state.team) {
+  const stage = normalizeWorkflowStage(taskItem.stage || taskItem.name);
+  const normalizedTask = { ...taskItem, stage };
+  const assignee = preferredTaskAssignee(normalizedTask, team);
+  const reviewer = preferredTaskReviewer(normalizedTask, assignee, team);
+  return {
+    ...normalizedTask,
+    assignee: shouldReplaceTaskPerson(normalizedTask.assignee, normalizedTask, team) ? assignee : normalizedTask.assignee,
+    reviewer: shouldReplaceTaskPerson(normalizedTask.reviewer, normalizedTask, team) ? reviewer : normalizedTask.reviewer
+  };
+}
+
+function shouldReplaceTaskPerson(name, taskItem, team = state.team) {
+  const person = safeList(team).find((personItem) => personItem.name === name);
+  if (!person) return true;
+  if (isAdminRole(person.role)) return true;
+  if (!roleOwnsWorkflowStage(person.role, taskItem.stage, taskItem.assignee)) return true;
+  return false;
+}
+
+function preferredTaskAssignee(taskItem, team = state.team) {
+  const stage = normalizeWorkflowStage(taskItem.stage || taskItem.name);
+  if (["Scriptwriting", "Script Checking", "Fact Verification"].includes(stage)) return staffNameByRole("Scriptwriter", team);
+  if (["Editing Pool or Assignment", "Editing", "Version Tracking", "Revision"].includes(stage)) return staffNameByRole("Video Editor", team);
+  if (["QC Checking", "Final Verification", "Scheduled and Published", "Analytics Update"].includes(stage)) return staffNameByRole("QC", team);
+  if (["Project Creation", "Manager / Director Approval", "Project Completion"].includes(stage)) return staffNameByRole("Creative Manager", team);
+  if (["Briefing and Planning", "Recording / Raw Ready", "Ready to Publish"].includes(stage)) return staffNameByRole("Coordinator", team);
+  return staffNameByRole("Coordinator", team) || staffNameByRole("Creative Manager", team) || taskItem.assignee || "";
+}
+
+function preferredTaskReviewer(taskItem, assignee, team = state.team) {
+  const stage = normalizeWorkflowStage(taskItem.stage || taskItem.name);
+  if (["Editing", "Version Tracking", "Revision"].includes(stage)) return staffNameByRole("QC", team) || assignee;
+  if (["QC Checking", "Final Verification", "Ready to Publish", "Scheduled and Published"].includes(stage)) return staffNameByRole("Creative Manager", team) || assignee;
+  if (["Scriptwriting", "Script Checking", "Fact Verification", "Recording / Raw Ready"].includes(stage)) return staffNameByRole("Coordinator", team) || assignee;
+  if (["Project Creation", "Briefing and Planning", "Manager / Director Approval", "Project Completion"].includes(stage)) return staffNameByRole("Creative Manager", team) || assignee;
+  return staffNameByRole("QC", team) || staffNameByRole("Creative Manager", team) || assignee;
+}
+
+function staffNameByRole(role, team = state.team) {
+  return safeList(team).find((personItem) => personItem.role === role)?.name || "";
 }
 
 function normalizeProjectType(value) {
@@ -705,25 +827,110 @@ function applyAuthContext() {
 
 function isAdminRole(role = AUTH_USER?.role || state.ui.currentRole) {
   const normalized = String(role || "").trim().toLowerCase();
-  return ["admin", "administrator", "manager", "director", "creative manager", "project manager", "coordinator"].includes(normalized);
+  return ["admin", "administrator"].includes(normalized);
 }
 
 function defaultViewForRole(role = AUTH_USER?.role || state.ui.currentRole) {
-  if (isAdminRole(role)) return "admin";
-  if (role === "Client") return "approvals";
-  return "editor";
+  return roleAccess(role).defaultView;
 }
 
 function navForRole(role = AUTH_USER?.role || state.ui.currentRole) {
-  const adminViews = ["dashboard", "admin", "projects", "videos", "tasks", "qc", "approvals", "assets", "team", "reports", "settings"];
-  const editorViews = ["editor", "videos", "tasks", "projects", "qc", "assets", "approvals"];
-  const clientViews = ["approvals", "assets"];
-  const allowed = isAdminRole(role) ? adminViews : role === "Client" ? clientViews : editorViews;
+  const allowed = roleAccess(role).views;
   return navItems.filter(([id]) => allowed.includes(id));
 }
 
 function canView(view, role = AUTH_USER?.role || state.ui.currentRole) {
   return navForRole(role).some(([id]) => id === view);
+}
+
+function roleAccess(role = AUTH_USER?.role || state.ui.currentRole) {
+  const normalized = String(role || "").trim().toLowerCase();
+  const access = {
+    admin: {
+      defaultView: "admin",
+      views: ["flow", "dashboard", "admin", "projects", "videos", "tasks", "qc", "approvals", "assets", "team", "reports", "settings"]
+    },
+    "creative manager": {
+      defaultView: "flow",
+      views: ["flow", "projects", "tasks", "approvals", "assets", "reports"]
+    },
+    coordinator: {
+      defaultView: "flow",
+      views: ["flow", "projects", "tasks", "assets"]
+    },
+    scriptwriter: {
+      defaultView: "editor",
+      views: ["flow", "editor", "projects", "tasks"]
+    },
+    "video editor": {
+      defaultView: "editor",
+      views: ["flow", "editor", "projects", "videos", "tasks", "qc", "assets"]
+    },
+    qc: {
+      defaultView: "qc",
+      views: ["flow", "editor", "videos", "tasks", "qc", "assets"]
+    },
+    client: {
+      defaultView: "approvals",
+      views: ["approvals", "assets"]
+    }
+  };
+
+  return access[normalized] || {
+    defaultView: "editor",
+    views: ["flow", "editor", "projects", "tasks", "assets"]
+  };
+}
+
+function workflowStagesForRole(role = AUTH_USER?.role || state.ui.currentRole) {
+  const normalized = String(role || "").trim().toLowerCase();
+  const stageAccess = {
+    admin: workflowStages,
+    administrator: workflowStages,
+    "creative manager": [
+      "Project Creation",
+      "Briefing and Planning",
+      "Editing Pool or Assignment",
+      "Manager / Director Approval",
+      "Project Completion",
+      "Analytics Update"
+    ],
+    coordinator: [
+      "Briefing and Planning",
+      "Recording / Raw Ready",
+      "Ready to Publish",
+      "Project Completion"
+    ],
+    scriptwriter: [
+      "Scriptwriting",
+      "Script Checking",
+      "Fact Verification"
+    ],
+    "video editor": [
+      "Editing Pool or Assignment",
+      "Editing",
+      "Version Tracking",
+      "Revision"
+    ],
+    qc: [
+      "QC Checking",
+      "Final Verification",
+      "Ready to Publish",
+      "Scheduled and Published",
+      "Analytics Update"
+    ]
+  };
+  return stageAccess[normalized] || [];
+}
+
+function roleOwnsWorkflowStage(role, stage) {
+  if (isAdminRole(role)) return true;
+  return workflowStagesForRole(role).includes(normalizeWorkflowStage(stage));
+}
+
+function canCreateWorkflowTasks(role = AUTH_USER?.role || state.ui.currentRole) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return ["admin", "administrator", "creative manager", "coordinator"].includes(normalized);
 }
 
 function saveState() {
@@ -820,6 +1027,7 @@ function renderView() {
   }
 
   const renderers = {
+    flow: renderFlowGuide,
     dashboard: renderDashboard,
     editor: renderEditorWorkspace,
     projects: renderProjects,
@@ -843,6 +1051,209 @@ function renderAccessDenied() {
       <div class="panel-body">${empty("Use the sidebar to open an available view for your role.")}</div>
     </section>
   `;
+}
+
+function renderFlowGuide() {
+  const activeProjects = safeList(state.projects).filter((project) => !["Completed", "Cancelled"].includes(project.status));
+  const openTasks = safeList(state.tasks).filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status));
+  const selectedProject = projectById(state.ui.selectedProjectId) || activeProjects[0] || state.projects[0];
+  const steps = endToEndWorkflow.map((step) => buildFlowStepStatus(step, selectedProject, openTasks, activeProjects));
+
+  return `
+    ${topbar("Production Flow", "Start here to see how a video moves from request to published final.", `
+      ${canView("projects") ? `<button class="button primary" data-action="new-project"><span>+</span> Project</button>` : ""}
+      ${canView("tasks") ? `<button class="button" data-action="view" data-view="tasks">Tasks</button>` : ""}
+      ${canView("assets") ? `<button class="button" data-action="view" data-view="assets">NAS / Files</button>` : ""}
+    `)}
+    <section class="flow-layout">
+      <div class="flow-map">
+        ${steps.map(flowStepCard).join("")}
+      </div>
+      <aside class="panel flow-side">
+        <div class="panel-header">
+          <div>
+            <h2>Current Project</h2>
+            <p>${selectedProject ? `${selectedProject.code} | ${selectedProject.status}` : "No project selected"}</p>
+          </div>
+          ${selectedProject && canView("projects") ? `<button class="button compact" data-action="select-project" data-id="${escapeAttr(selectedProject.id)}">Open</button>` : ""}
+        </div>
+        <div class="panel-body app-grid">
+          ${selectedProject ? `
+            <div class="progress"><span style="--value:${projectProgress(selectedProject)}%"></span></div>
+            <div class="detail-grid">
+              ${detail("Project", selectedProject.name)}
+              ${detail("Stage", selectedProject.workflowStage)}
+              ${detail("Manager", selectedProject.assignedManager)}
+              ${detail("Deadline", formatDate(selectedProject.deadline))}
+            </div>
+            <div class="workflow-track compact-flow-track">
+              ${flowStagesForProject(selectedProject).map((stage) => workflowStage(selectedProject.workflowStage, stage)).join("")}
+            </div>
+          ` : empty("Create a project to begin the workflow.")}
+        </div>
+      </aside>
+    </section>
+  `;
+}
+
+function buildFlowStepStatus(step, selectedProject, openTasks, activeProjects) {
+  const scopedTasks = flowTasksForStep(step.stage, selectedProject);
+  const incompleteTasks = scopedTasks.filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status));
+  const completeTasks = scopedTasks.filter((taskItem) => taskItem.status === "Completed" || taskCompletion(taskItem) >= 100);
+  let output = workflowOutputStatus(step.stage, selectedProject, scopedTasks);
+  const currentIndex = selectedProject ? workflowStages.indexOf(normalizeWorkflowStage(selectedProject.workflowStage)) : -1;
+  const stepIndex = workflowStages.indexOf(step.stage);
+  const isPastStage = selectedProject && currentIndex > stepIndex;
+  const isCurrentStage = selectedProject && currentIndex === stepIndex;
+
+  if (isPastStage && !output.ready && !scopedTasks.length) {
+    output = { ready: true, detail: "Passed in the project workflow.", forceComplete: false };
+  }
+
+  let status = "Not Started";
+  let statusClass = "not-started";
+
+  if (incompleteTasks.some((taskItem) => taskItem.status === "Blocked")) {
+    status = "Blocked";
+    statusClass = "blocked";
+  } else if (incompleteTasks.some((taskItem) => taskItem.status === "Revision Required")) {
+    status = "Revision Required";
+    statusClass = "revision";
+  } else if (incompleteTasks.some((taskItem) => taskItem.status === "Waiting Approval")) {
+    status = "Waiting Approval";
+    statusClass = "waiting";
+  } else if (scopedTasks.length && completeTasks.length === scopedTasks.length && !output.ready) {
+    status = "Missing Output";
+    statusClass = "missing";
+  } else if ((scopedTasks.length && completeTasks.length === scopedTasks.length && output.ready) || isPastStage || output.forceComplete || (!scopedTasks.length && output.ready)) {
+    status = "Completed";
+    statusClass = "completed";
+  } else if (incompleteTasks.length) {
+    status = incompleteTasks.some((taskItem) => ["In Progress", "Waiting Review"].includes(taskItem.status) || taskCompletion(taskItem) > 0)
+      ? "In Progress"
+      : "Pending";
+    statusClass = status === "Pending" ? "pending" : "in-progress";
+  } else if (isCurrentStage) {
+    status = "Current";
+    statusClass = "current";
+  }
+
+  const globalOpenCount = openTasks.filter((taskItem) => normalizeWorkflowStage(taskItem.stage) === step.stage).length;
+  const countLabel = selectedProject
+    ? scopedTasks.length
+      ? `${completeTasks.length}/${scopedTasks.length} tasks complete`
+      : output.ready
+        ? "output exists"
+        : "no task yet"
+    : step.number === 1
+      ? `${activeProjects.length} active projects`
+      : `${globalOpenCount} open tasks`;
+
+  return {
+    ...step,
+    count: incompleteTasks.length,
+    countLabel,
+    status,
+    statusClass,
+    body: `Main output: ${step.output}`,
+    outputReady: output.ready,
+    outputDetail: output.detail
+  };
+}
+
+function flowTasksForStep(stage, selectedProject) {
+  return safeList(state.tasks).filter((taskItem) => {
+    const matchesStage = normalizeWorkflowStage(taskItem.stage) === stage;
+    const matchesProject = !selectedProject || taskItem.projectId === selectedProject.id;
+    return matchesStage && matchesProject;
+  });
+}
+
+function workflowOutputStatus(stage, project, scopedTasks = []) {
+  if (!project) {
+    return { ready: false, detail: "Select or create a project to inspect this output.", forceComplete: false };
+  }
+
+  const projectAssets = safeList(state.assets).filter((assetItem) => assetItem.projectId === project.id);
+  const projectVideos = safeList(state.videos).filter((video) => video.projectId === project.id);
+  const projectApprovals = safeList(state.approvals).filter((approvalItem) => approvalItem.projectId === project.id);
+  const projectRemarks = safeList(state.qcRemarks).filter((remark) => {
+    const video = projectVideos.find((item) => item.id === remark.videoId);
+    return video?.projectId === project.id;
+  });
+  const taskOutputReady = scopedTasks.length > 0 && scopedTasks.every((taskItem) => taskItem.status === "Completed" || taskCompletion(taskItem) >= 100);
+  const hasNasPath = Boolean(project.nasFolder) || projectAssets.some((assetItem) => assetItem.storagePath || assetItem.rawPath || assetItem.projectPath);
+  const hasVersion = projectAssets.some((assetItem) => Number(assetItem.version || 0) > 1) || safeList(state.assetVersions).some((version) => {
+    const assetItem = projectAssets.find((item) => item.id === version.assetId);
+    return Boolean(assetItem);
+  });
+  const hasOpenQc = projectRemarks.some((remark) => !["Resolved", "Closed"].includes(remark.status));
+  const hasApproval = projectApprovals.some((approvalItem) => approvalItem.status === "Approved");
+  const hasApprovedFinal = projectAssets.some((assetItem) => assetItem.category === "Final Deliverable" || assetItem.status === "Approved" || assetItem.finalPath);
+  const hasPublished = projectVideos.some((video) => video.publishedUrl || ["Published", "Scheduled and Published"].includes(video.status || video.currentStage));
+
+  if (stage === "Project Creation") return { ready: true, detail: "Project record exists.", forceComplete: true };
+  if (stage === "Briefing and Planning") {
+    const ready = Boolean(project.objectives && project.targetAudience && safeList(project.deliverables).length);
+    return { ready, detail: ready ? "Brief, audience, and deliverables are filled." : "Brief, audience, or deliverables still missing.", forceComplete: false };
+  }
+  if (stage === "Recording / Raw Ready") return { ready: hasNasPath, detail: hasNasPath ? "NAS/raw material path is linked." : "Add NAS folder or raw asset path.", forceComplete: false };
+  if (stage === "Editing") {
+    const ready = taskOutputReady || projectVideos.some((video) => ["Submitted for QC", "QC Checking", "Final Verification"].includes(video.detailedStatus || video.currentStage));
+    return { ready, detail: ready ? "Edit has been submitted forward." : "Editor must complete and submit the cut.", forceComplete: false };
+  }
+  if (stage === "Version Tracking") return { ready: hasVersion || taskOutputReady, detail: hasVersion ? "Version history or asset version exists." : "Register the current version.", forceComplete: false };
+  if (stage === "QC Checking") return { ready: taskOutputReady && !hasOpenQc, detail: hasOpenQc ? "Open QC remarks remain." : "QC task/remarks are clear.", forceComplete: false };
+  if (stage === "Revision") return { ready: taskOutputReady && !hasOpenQc, detail: hasOpenQc ? "Revision remarks still open." : "Revision work is resolved.", forceComplete: false };
+  if (stage === "Manager / Director Approval") return { ready: hasApproval, detail: hasApproval ? "Approval has been recorded." : "Approval decision is still needed.", forceComplete: false };
+  if (stage === "Ready to Publish") return { ready: hasApprovedFinal, detail: hasApprovedFinal ? "Approved final output is ready." : "Approved final deliverable/link needed.", forceComplete: false };
+  if (stage === "Scheduled and Published") return { ready: hasPublished, detail: hasPublished ? "Published URL/status exists." : "Add published URL or publish status.", forceComplete: false };
+  if (stage === "Project Completion") {
+    const ready = project.status === "Completed";
+    return { ready, detail: ready ? "Project is marked completed." : "Close the project after publishing.", forceComplete: ready };
+  }
+  if (stage === "Analytics Update") {
+    const ready = project.status === "Completed";
+    return { ready, detail: ready ? "Reports include the completed project." : "System reports update after completion.", forceComplete: ready };
+  }
+
+  return {
+    ready: taskOutputReady,
+    detail: taskOutputReady ? "All tasks in this stage are complete." : "Complete the stage task to create this output.",
+    forceComplete: false
+  };
+}
+
+function flowStepCard(step) {
+  const disabled = !canView(step.action);
+  const ownerVisible = roleOwnsWorkflowStage(state.ui.currentRole || AUTH_USER?.role, step.stage);
+  return `
+    <article class="flow-step ${disabled ? "disabled" : ""} ${ownerVisible ? "owned" : ""} ${escapeAttr(step.statusClass)}">
+      <div class="flow-step-number">${escapeHtml(step.number)}</div>
+      <div class="flow-step-main">
+        <div class="item-head">
+          <div>
+            <h2>${escapeHtml(step.stage)}</h2>
+            <div class="item-meta">${escapeHtml(step.owner)}</div>
+          </div>
+          <span class="flow-status ${escapeAttr(step.statusClass)}">${escapeHtml(step.status)}</span>
+        </div>
+        <p>${escapeHtml(step.body)}</p>
+        <div class="flow-output-check ${escapeAttr(step.statusClass)}">
+          <span>${escapeHtml(step.outputReady ? "Done" : "Needed")}</span>
+          <strong>${escapeHtml(step.outputDetail)}</strong>
+        </div>
+        <div class="flow-step-footer">
+          <span class="tag">${escapeHtml(step.countLabel)}</span>
+          ${disabled ? "" : `<button class="button compact" data-action="view" data-view="${escapeAttr(step.action)}">${escapeHtml(step.actionLabel)}</button>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function flowStagesForProject(project) {
+  return workflowStages;
 }
 
 function topbar(title, copy, actions = "") {
@@ -977,8 +1388,8 @@ function renderDashboard() {
 
 function renderEditorWorkspace() {
   const user = state.ui.currentUser || state.team[0]?.name || "";
-  const tasks = state.tasks
-    .filter((taskItem) => taskItem.assignee === user && !["Completed", "Cancelled"].includes(taskItem.status))
+  const tasks = visibleTasksForUser(user)
+    .filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const projects = memberProjects(user);
   const videos = userVideos(user);
@@ -990,11 +1401,11 @@ function renderEditorWorkspace() {
   const unread = notificationsFor(user).filter((item) => !item.read).length;
 
   return `
-    ${topbar("My Work", "Assigned work, video progress, QC remarks, server links, and notifications in one workspace.", `
-      <button class="button primary" data-action="new-task"><span>+</span> Task</button>
-      <button class="button" data-action="view" data-view="videos">Video Tracker</button>
-      <button class="button" data-action="view" data-view="qc">QC</button>
-      <button class="button" data-action="view" data-view="assets">Server Links</button>
+    ${topbar("My Work", "Assigned work, editing progress, QC remarks, NAS files, and notifications in one workspace.", `
+      ${canCreateWorkflowTasks() ? `<button class="button primary" data-action="new-task"><span>+</span> Task</button>` : ""}
+      ${canView("videos") ? `<button class="button" data-action="view" data-view="videos">Editing Tracker</button>` : ""}
+      ${canView("qc") ? `<button class="button" data-action="view" data-view="qc">QC</button>` : ""}
+      ${canView("assets") ? `<button class="button" data-action="view" data-view="assets">NAS / Files</button>` : ""}
     `)}
     <section class="editor-hero">
       <div>
@@ -1015,18 +1426,18 @@ function renderEditorWorkspace() {
         <strong>${projects.length}</strong>
         <span>Projects</span>
       </button>
-      <button class="quick-action" data-action="view" data-view="videos">
+      ${canView("videos") ? `<button class="quick-action" data-action="view" data-view="videos">
         <strong>${videos.filter((video) => ["Red", "Critical"].includes(video.redFlag)).length}</strong>
         <span>Red Flags</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="qc">
+      </button>` : ""}
+      ${canView("qc") ? `<button class="quick-action" data-action="view" data-view="qc">
         <strong>${remarks.filter((remark) => ["Major", "Critical"].includes(remark.severity)).length}</strong>
         <span>Major QC</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="assets">
+      </button>` : ""}
+      ${canView("assets") ? `<button class="quick-action" data-action="view" data-view="assets">
         <strong>${assets.length}</strong>
         <span>NAS Links</span>
-      </button>
+      </button>` : ""}
     </section>
     <section class="grid-2">
       <div class="panel">
@@ -1081,7 +1492,7 @@ function renderEditorWorkspace() {
     <section class="panel">
       <div class="panel-header">
         <div>
-          <h2>Project Server Links</h2>
+          <h2>Project NAS / Files</h2>
           <p>NAS paths for your current projects</p>
         </div>
       </div>
@@ -1171,13 +1582,12 @@ function renderMemberProjects() {
 
 function renderMemberTasks() {
   const user = state.ui.currentUser || AUTH_USER?.name || "";
-  const tasks = state.tasks
-    .filter((taskItem) => taskItem.assignee === user || taskItem.reviewer === user)
+  const tasks = visibleTasksForUser(user)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   return `
     ${topbar("My Tasks", "Your assigned and review tasks, ordered by deadline.", `
       <button class="button" data-action="view" data-view="editor">My Work</button>
-      <button class="button" data-action="view" data-view="assets">Server Links</button>
+      ${canView("assets") ? `<button class="button" data-action="view" data-view="assets">NAS / Files</button>` : ""}
     `)}
     <section class="panel">
       <div class="panel-header">
@@ -1198,7 +1608,7 @@ function renderMemberAssets() {
   const projectIds = new Set(memberProjects(user).map((project) => project.id));
   const assets = state.assets.filter((assetItem) => projectIds.has(assetItem.projectId));
   return `
-    ${topbar("My Server Links", "NAS paths, preview links, versions, and final output references attached to your assigned projects.", `
+    ${topbar("My NAS / Files", "NAS paths, preview links, versions, and final output references attached to your assigned projects.", `
       <button class="button" data-action="view" data-view="editor">My Work</button>
       <button class="button" data-action="new-asset"><span>+</span> Register Link</button>
     `)}
@@ -1207,7 +1617,7 @@ function renderMemberAssets() {
 }
 
 function memberProjectCard(project) {
-  const relatedTasks = state.tasks.filter((taskItem) => taskItem.projectId === project.id && (taskItem.assignee === state.ui.currentUser || taskItem.reviewer === state.ui.currentUser));
+  const relatedTasks = visibleTasksForUser(state.ui.currentUser).filter((taskItem) => taskItem.projectId === project.id);
   return `
     <article class="list-item">
       <div class="item-head">
@@ -1225,14 +1635,14 @@ function memberProjectCard(project) {
       <div class="button-row">
         <button class="button compact" data-action="select-member-project" data-id="${escapeAttr(project.id)}">Open Details</button>
         <button class="button compact" data-action="view" data-view="tasks">Tasks</button>
-        <button class="button compact" data-action="view" data-view="assets">Server Links</button>
+        ${canView("assets") ? `<button class="button compact" data-action="view" data-view="assets">Server Links</button>` : ""}
       </div>
     </article>
   `;
 }
 
 function memberProjectDetail(project, user) {
-  const tasks = state.tasks.filter((taskItem) => taskItem.projectId === project.id && (taskItem.assignee === user || taskItem.reviewer === user));
+  const tasks = visibleTasksForUser(user).filter((taskItem) => taskItem.projectId === project.id);
   const assets = state.assets.filter((assetItem) => assetItem.projectId === project.id);
   return `
     <div class="panel project-detail">
@@ -1293,6 +1703,7 @@ function renderAdminCenter() {
     <section class="admin-actions-grid">
       ${adminAction("Projects", activeProjects.length, "Open register", "projects")}
       ${adminAction("Tasks", blockedTasks.length + staleTasks.length, "Blocked or stale", "tasks")}
+      ${adminAction("Staff", safeList(state.team).length, "Active users", "team")}
       ${adminAction("Videos", flaggedVideos.length, "Red flags", "videos")}
       ${adminAction("QC", majorRemarks.length, "Major remarks", "qc")}
       ${adminAction("Approvals", pendingApprovals.length, "Pending sign-off", "approvals")}
@@ -1320,9 +1731,10 @@ function renderAdminCenter() {
               <h2>Workload</h2>
               <p>${(heavyUsers.length ? heavyUsers : safeList(state.team)).length} people shown</p>
             </div>
+            <button class="button compact" data-action="view" data-view="team">Staff</button>
           </div>
           <div class="panel-body">
-            <div class="chart-list">${(heavyUsers.length ? heavyUsers : safeList(state.team)).slice(0, 6).map(personWorkloadBar).join("")}</div>
+            <div class="admin-list compact-list">${adminStaffList()}</div>
           </div>
         </div>
         <div class="panel">
@@ -1384,6 +1796,34 @@ function adminAction(title, value, note, view) {
       <span>${escapeHtml(title)}</span>
       <small>${escapeHtml(note)}</small>
     </button>
+  `;
+}
+
+function adminStaffList() {
+  const team = safeList(state.team)
+    .slice()
+    .sort((a, b) => staffSortRank(a) - staffSortRank(b) || String(a.name).localeCompare(String(b.name)));
+  return team.map(adminStaffItem).join("") || empty("No staff accounts yet.");
+}
+
+function adminStaffItem(personItem) {
+  const openAssigned = safeList(state.tasks).filter((taskItem) => taskItem.assignee === personItem.name && !["Completed", "Cancelled"].includes(taskItem.status)).length;
+  const openReview = safeList(state.tasks).filter((taskItem) => taskItem.reviewer === personItem.name && !["Completed", "Cancelled"].includes(taskItem.status)).length;
+  return `
+    <article class="list-item staff-mini">
+      <div class="item-head">
+        <div>
+          <div class="item-title">${escapeHtml(personItem.name)}</div>
+          <div class="item-meta">${escapeHtml(personItem.role || "Staff")} | ${escapeHtml(personItem.email || "No email")}</div>
+        </div>
+        <span class="task-count-badge">${openAssigned + openReview}</span>
+      </div>
+      <div class="item-meta">
+        <span>${openAssigned} assigned</span>
+        <span>${openReview} review</span>
+        <span>${assignedTaskHours(personItem.name)}h</span>
+      </div>
+    </article>
   `;
 }
 
@@ -1802,7 +2242,10 @@ function qcRemarkCard(remark) {
 
 function renderTasks() {
   const tasks = filteredTasks();
-  const statuses = ["Pending", "In Progress", "Waiting Review", "Waiting Approval", "Revision Required", "Blocked", "Completed"];
+  const statuses = state.ui.taskStatus === "All"
+    ? ["Pending", "In Progress", "Waiting Review", "Waiting Approval", "Revision Required", "Blocked", "Completed"]
+    : [state.ui.taskStatus];
+  const assignees = [["All", "All Staff"], ...userChoices()];
   return `
     ${topbar("Task Management", "Assignment, review, dependencies, revision count, effort, and deadline status.", `
       <button class="button primary" data-action="new-task"><span>+</span> New Task</button>
@@ -1817,17 +2260,17 @@ function renderTasks() {
         <select id="task-status" data-input="taskStatus">${options(["All", ...taskStatuses], state.ui.taskStatus)}</select>
       </div>
       <div class="field">
-        <label for="task-count">Tasks</label>
-        <input id="task-count" value="${tasks.length} shown" disabled>
+        <label for="task-assignee">Assignee</label>
+        <select id="task-assignee" data-input="taskAssignee">${options(assignees, state.ui.taskAssignee || "All")}</select>
       </div>
       <div class="field">
-        <label for="task-hours">Hours</label>
-        <input id="task-hours" value="${tasks.reduce((sum, item) => sum + Number(item.actualHours || 0), 0)} actual" disabled>
+        <label for="task-count">Tasks</label>
+        <input id="task-count" value="${tasks.length} shown" disabled>
       </div>
     </section>
     <section class="panel">
       <div class="panel-body">
-        <div class="kanban">
+        <div class="kanban task-board ${statuses.length === 1 ? "single-status" : ""}">
           ${statuses.map((status) => taskColumn(status, tasks.filter((item) => item.status === status))).join("")}
         </div>
       </div>
@@ -1836,16 +2279,21 @@ function renderTasks() {
 }
 
 function taskColumn(status, tasks) {
+  const preview = tasks.slice(0, 3).map((taskItem) => taskItem.name).join(", ");
+  const remaining = Math.max(tasks.length - 3, 0);
   return `
-    <div class="kanban-column">
-      <div class="kanban-title">
-        <span>${escapeHtml(status)}</span>
-        <span class="tag">${tasks.length}</span>
-      </div>
+    <details class="kanban-column ${tasks.length ? "has-tasks" : "is-empty"}" open>
+      <summary class="kanban-title">
+        <span class="kanban-title-main">
+          <span class="kanban-title-label">${escapeHtml(status)}</span>
+          <span class="kanban-collapsed-preview">${escapeHtml(preview || "No tasks")}${remaining ? ` +${remaining} more` : ""}</span>
+        </span>
+        <span class="task-count-badge">${tasks.length}</span>
+      </summary>
       <div class="kanban-list">
-        ${tasks.map(taskCard).join("") || `<div class="empty">No items</div>`}
+        ${tasks.map(taskCard).join("")}
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -1867,17 +2315,19 @@ function taskCard(taskItem) {
         <span>${taskItem.actualHours}/${taskItem.estimatedHours}h</span>
         <span>R${taskItem.revisionCount}</span>
       </div>
-      <div class="progress"><span style="--value:${progress}%"></span></div>
-      <div class="small muted">${progress}% complete</div>
+      <div class="task-progress-row compact">
+        <div class="progress"><span style="--value:${progress}%"></span></div>
+        <span class="strong">${progress}%</span>
+      </div>
       <div class="task-card-footer">
         <select data-action="task-status" data-id="${taskItem.id}" aria-label="Task status">
           ${options(taskStatuses, taskItem.status)}
         </select>
         <div class="task-actions">
-          <button class="button compact primary" data-action="update-progress" data-id="${taskItem.id}">Update</button>
+          <button class="button compact primary" data-action="update-progress" data-id="${taskItem.id}">Progress</button>
           <button class="button compact" data-action="edit-task" data-id="${taskItem.id}">Edit</button>
           <button class="button compact" data-action="comment-task" data-id="${taskItem.id}">Note</button>
-          <button class="button compact" data-action="request-task-revision" data-id="${taskItem.id}">Revision</button>
+          <button class="button compact" data-action="request-task-revision" data-id="${taskItem.id}">Revise</button>
         </div>
       </div>
     </article>
@@ -1896,18 +2346,17 @@ function editorTaskCard(taskItem) {
         </div>
         ${pill(taskItem.status)}
       </div>
-      <p class="muted small">${escapeHtml(taskItem.lastProgressNote || taskItem.description || "No notes yet.")}</p>
       <div class="progress"><span style="--value:${progress}%"></span></div>
       <div class="task-progress-row">
         <span class="strong">${progress}%</span>
         <span class="muted small">${escapeHtml(taskItem.actualHours || 0)} / ${escapeHtml(taskItem.estimatedHours || 0)}h</span>
       </div>
       <div class="button-row">
-        <button class="button compact primary" data-action="update-progress" data-id="${taskItem.id}">Update Progress</button>
+        <button class="button compact primary" data-action="update-progress" data-id="${taskItem.id}">Progress</button>
         <button class="button compact" data-action="quick-progress" data-id="${taskItem.id}" data-progress="50">50%</button>
         <button class="button compact" data-action="quick-progress" data-id="${taskItem.id}" data-progress="75">75%</button>
-        <button class="button compact" data-action="mark-ready" data-id="${taskItem.id}">Ready Review</button>
-        <button class="button compact" data-action="comment-task" data-id="${taskItem.id}">Comment</button>
+        <button class="button compact" data-action="mark-ready" data-id="${taskItem.id}">Review</button>
+        <button class="button compact" data-action="comment-task" data-id="${taskItem.id}">Note</button>
       </div>
     </article>
   `;
@@ -2056,7 +2505,7 @@ function publishingWatchItems() {
     .filter((video) => {
       const stage = String(video.currentStage || "");
       const status = String(video.status || "");
-      return ["Final Verification", "Approval", "Ready to Publish", "Publishing", "Published"].some((value) => stage.includes(value) || status.includes(value));
+      return ["Final Verification", "Manager / Director Approval", "Ready to Publish", "Scheduled and Published", "Published"].some((value) => stage.includes(value) || status.includes(value));
     })
     .map((video) => {
       const project = projectById(video.projectId);
@@ -2326,25 +2775,35 @@ function calendarGrid(base, events) {
 }
 
 function renderTeam() {
-  const workload = Object.fromEntries(state.team.map((personItem) => [personItem.name, assignedTaskHours(personItem.name)]));
+  const team = safeList(state.team).slice().sort((a, b) => staffSortRank(a) - staffSortRank(b) || String(a.name).localeCompare(String(b.name)));
+  const workload = Object.fromEntries(team.map((personItem) => [personItem.name, assignedTaskHours(personItem.name)]));
+  const openTasks = safeList(state.tasks).filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status));
   return `
-    ${topbar("Staff Management", "Workflow departments, roles, permissions, utilization, and audit ownership.", `
+    ${topbar("Staff Management", "Simple test team for creative operations roles, login access, and task load.", `
       <button class="button primary" data-action="new-user"><span>+</span> User</button>
     `)}
+    <section class="admin-health staff-health">
+      ${adminMetric("Staff", team.length, "Dropdown login users", "blue")}
+      ${adminMetric("Open Tasks", openTasks.length, "Assigned or reviewing", openTasks.length ? "yellow" : "green")}
+      ${adminMetric("Editors", team.filter((personItem) => /editor|script|qc/i.test(`${personItem.role} ${personItem.title}`)).length, "Production users", "green")}
+      ${adminMetric("Managers", team.filter((personItem) => isAdminRole(personItem.role)).length, "Admin views", "blue")}
+    </section>
     <section class="team-grid">
-      ${state.team.map((personItem) => personCard(personItem, workload[personItem.name])).join("")}
+      ${team.map((personItem) => personCard(personItem, workload[personItem.name])).join("")}
     </section>
   `;
 }
 
 function personCard(personItem, assignedHours) {
+  const openAssigned = safeList(state.tasks).filter((taskItem) => taskItem.assignee === personItem.name && !["Completed", "Cancelled"].includes(taskItem.status)).length;
+  const openReview = safeList(state.tasks).filter((taskItem) => taskItem.reviewer === personItem.name && !["Completed", "Cancelled"].includes(taskItem.status)).length;
   return `
     <article class="person-card">
       <div class="person-body">
         <div class="item-head">
           <div>
             <div class="item-title">${escapeHtml(personItem.name)}</div>
-            <div class="item-meta">${escapeHtml(personItem.title)} | ${escapeHtml(personItem.department)}</div>
+            <div class="item-meta">${escapeHtml(personItem.title)} | ${escapeHtml(personItem.email || "No email")}</div>
           </div>
           <span class="tag">${escapeHtml(personItem.role)}</span>
         </div>
@@ -2352,8 +2811,10 @@ function personCard(personItem, assignedHours) {
         <div class="item-meta">
           <span>${personItem.utilization}% utilization</span>
           <span>${assignedHours}h assigned</span>
+          <span>${openAssigned} tasks</span>
+          <span>${openReview} reviews</span>
         </div>
-        <div class="tag-list">${personItem.skills.map((skill) => `<span class="tag">${escapeHtml(skill)}</span>`).join("")}</div>
+        <div class="tag-list">${safeList(personItem.skills).slice(0, 4).map((skill) => `<span class="tag">${escapeHtml(skill)}</span>`).join("")}</div>
       </div>
     </article>
   `;
@@ -2732,7 +3193,7 @@ function openProjectModal(id) {
     actualCompletion: "",
     estimatedHours: 40,
     actualHours: 0,
-    workflowStage: "Content Request",
+    workflowStage: "Project Creation",
     tags: [],
     categories: [],
     milestones: [],
@@ -2905,21 +3366,28 @@ function defaultRoleAssignments() {
     const profile = `${personItem.role || ""} ${personItem.title || ""} ${safeList(personItem.skills).join(" ")}`.toLowerCase();
     return terms.some((term) => profile.includes(String(term).toLowerCase()));
   })?.name || "";
+  const byExactRole = (roles) => safeList(state.team).find((personItem) => roles.includes(personItem.role))?.name || "";
+  const manager = byExactRole(["Creative Manager"]) || byExactRole(["Admin"]) || byRole(["manager", "admin"]);
+  const coordinator = byExactRole(["Coordinator"]) || byRole(["coordinator", "producer", "raw readiness"]);
+  const scriptwriter = byExactRole(["Scriptwriter"]) || byRole(["script", "copy"]);
+  const editor = byExactRole(["Video Editor"]) || byRole(["video editor", "editing"]);
+  const qc = byExactRole(["QC"]) || byRole(["qc", "quality", "approval", "publishing"]);
   return {
-    scriptwriter: byRole(["script", "copy"]),
-    producer: byRole(["producer", "production", "coordinator", "raw readiness"]),
-    editor: byRole(["video editor", "editing"]),
-    audio: byRole(["audio", "sound", "mix"]),
-    designer: byRole(["designer", "design", "motion"]),
-    qc: byRole(["qc", "quality"]),
-    verifier: byRole(["verifier", "final verifier", "manager"]),
-    approver: byRole(["approver", "manager", "admin"]),
-    publisher: byRole(["publisher", "publishing", "coordinator"])
+    scriptwriter,
+    producer: coordinator,
+    editor,
+    audio: editor,
+    designer: editor,
+    qc,
+    verifier: qc || scriptwriter,
+    approver: manager,
+    publisher: qc || coordinator
   };
 }
 
 function openTaskModal(id, projectId = "") {
   const existing = state.tasks.find((taskItem) => taskItem.id === id);
+  const staffChoices = [["", "Select staff"], ...userChoices()];
   const taskItem = existing || {
     id: "",
     projectId: projectId || state.ui.selectedProjectId || state.projects[0]?.id || "",
@@ -2939,7 +3407,7 @@ function openTaskModal(id, projectId = "") {
     dependencies: [],
     revisionCount: 0,
     status: "Pending",
-    stage: "Planning",
+    stage: "Briefing and Planning",
     progressPercent: 0,
     lastProgressNote: "",
     lastProgressAt: ""
@@ -2952,8 +3420,8 @@ function openTaskModal(id, projectId = "") {
         ${selectField("Project", "projectId", state.projects.map((project) => [project.id, `${project.code} - ${project.name}`]), taskItem.projectId)}
         ${selectField("Stage", "stage", workflowStages, taskItem.stage)}
         ${selectField("Priority", "priority", ["High", "Medium", "Low"], taskItem.priority)}
-        ${formField("Assignee", "assignee", taskItem.assignee, "text", true)}
-        ${formField("Reviewer", "reviewer", taskItem.reviewer)}
+        ${selectField("Assignee", "assignee", staffChoices, taskItem.assignee, true)}
+        ${selectField("Reviewer", "reviewer", staffChoices, taskItem.reviewer)}
         ${selectField("Status", "status", taskStatuses, taskItem.status)}
         ${formField("Start Date", "startDate", taskItem.startDate, "date")}
         ${formField("Due Date", "dueDate", taskItem.dueDate, "date")}
@@ -3253,7 +3721,7 @@ function saveProject(data) {
     actualCompletion: data.status === "Completed" ? (data.actualCompletion || toISO(new Date())) : "",
     estimatedHours: Number(data.estimatedHours || 0),
     actualHours: projectHours(id),
-    workflowStage: data.status === "Completed" ? "Archive" : "Content Request",
+    workflowStage: data.status === "Completed" ? "Project Completion" : "Project Creation",
     tags: splitList(data.tags),
     categories: [],
     milestones: [],
@@ -3265,7 +3733,7 @@ function saveProject(data) {
   const index = state.projects.findIndex((item) => item.id === id);
   if (index >= 0) {
     const previous = state.projects[index];
-    project.workflowStage = data.status === "Completed" ? "Archive" : previous.workflowStage;
+    project.workflowStage = data.status === "Completed" ? "Project Completion" : previous.workflowStage;
     project.actualCompletion = data.status === "Completed" ? (previous.actualCompletion || toISO(new Date())) : "";
     project.creativeBrief = { ...previous.creativeBrief, ...project.creativeBrief };
     project.milestones = previous.milestones;
@@ -3717,10 +4185,10 @@ function advanceStage(projectId) {
   const index = workflowStages.indexOf(project.workflowStage);
   const next = workflowStages[Math.min(index + 1, workflowStages.length - 1)];
   project.workflowStage = next;
-  if (next === "Archive") {
+  if (next === "Project Completion") {
     project.status = "Completed";
     project.actualCompletion = toISO(new Date());
-  } else if (["Client Approval", "Management Approval", "Final Review"].includes(next)) {
+  } else if (["Manager / Director Approval", "Final Verification"].includes(next)) {
     project.status = "Waiting Approval";
   } else {
     project.status = "In Progress";
@@ -4037,6 +4505,7 @@ function filteredProjects() {
 
 function filteredTasks() {
   const term = String(state.ui.taskSearch || "").trim().toLowerCase();
+  const assignee = state.ui.taskAssignee || "All";
   return safeList(state.tasks).filter((taskItem) => {
     const project = projectById(taskItem.projectId);
     const matchesTerm = !term || [
@@ -4049,8 +4518,18 @@ function filteredTasks() {
       project?.code
     ].join(" ").toLowerCase().includes(term);
     const matchesStatus = state.ui.taskStatus === "All" || taskItem.status === state.ui.taskStatus;
-    return matchesTerm && matchesStatus;
+    const matchesAssignee = assignee === "All" || taskItem.assignee === assignee || taskItem.reviewer === assignee;
+    return matchesTerm && matchesStatus && matchesAssignee;
   });
+}
+
+function staffSortRank(personItem) {
+  const role = String(personItem.role || "");
+  if (role === "Admin") return 0;
+  if (["Creative Manager", "Manager", "Project Manager", "Director"].includes(role)) return 1;
+  if (role === "Coordinator") return 2;
+  if (["Scriptwriter", "Video Editor", "QC"].includes(role)) return 3;
+  return 4;
 }
 
 function getSelectedProject(projects) {
@@ -4398,12 +4877,12 @@ function textField(label, name, value = "") {
   `;
 }
 
-function selectField(label, name, choices, selected) {
+function selectField(label, name, choices, selected, required = false) {
   const id = `${name}-${Math.random().toString(16).slice(2)}`;
   return `
     <div class="form-field">
       <label for="${id}">${escapeHtml(label)}</label>
-      <select id="${id}" name="${escapeAttr(name)}">${options(choices, selected)}</select>
+      <select id="${id}" name="${escapeAttr(name)}" ${required ? "required" : ""}>${options(choices, selected)}</select>
     </div>
   `;
 }
@@ -4500,8 +4979,7 @@ function notificationsFor(user) {
 
 function memberProjects(user) {
   const taskProjectIds = new Set(
-    state.tasks
-      .filter((taskItem) => taskItem.assignee === user || taskItem.reviewer === user)
+    visibleTasksForUser(user)
       .map((taskItem) => taskItem.projectId)
   );
 
@@ -4509,6 +4987,19 @@ function memberProjects(user) {
     const team = Array.isArray(project.assignedTeamMembers) ? project.assignedTeamMembers : [];
     const access = Array.isArray(project.accessMembers) ? project.accessMembers : [];
     return team.includes(user) || access.includes(user) || project.assignedManager === user || taskProjectIds.has(project.id);
+  });
+}
+
+function visibleTasksForUser(user) {
+  const role = state.ui.currentRole || AUTH_USER?.role || "";
+  if (isAdminRole(role)) return safeList(state.tasks);
+  const allowedStages = workflowStagesForRole(role);
+  const canReview = ["Creative Manager", "Coordinator", "QC"].includes(role);
+  return safeList(state.tasks).filter((taskItem) => {
+    const stage = normalizeWorkflowStage(taskItem.stage);
+    if (taskItem.assignee === user) return true;
+    if (canReview && taskItem.reviewer === user) return true;
+    return allowedStages.includes(stage) && roleOwnsWorkflowStage(role, stage);
   });
 }
 

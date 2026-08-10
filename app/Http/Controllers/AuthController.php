@@ -20,7 +20,13 @@ class AuthController
             return view('setup');
         }
 
-        return view('login');
+        $users = DB::table('users')
+            ->select('name', 'email', 'role')
+            ->orderByRaw("CASE WHEN role = 'Admin' THEN 0 WHEN role IN ('Creative Manager', 'Coordinator') THEN 1 ELSE 2 END")
+            ->orderBy('name')
+            ->get();
+
+        return view('login', ['users' => $users]);
     }
 
     public function createFirstAdmin(Request $request): RedirectResponse
@@ -73,7 +79,7 @@ class AuthController
         }
 
         $request->session()->regenerate();
-        $defaultView = in_array($user->role, ['Admin', 'Manager', 'Director', 'Creative Manager', 'Project Manager', 'Coordinator'], true) ? 'admin' : 'editor';
+        $defaultView = $this->defaultViewForRole((string) $user->role);
 
         $request->session()->put('creative_user', [
             'id' => $user->id,
@@ -86,6 +92,17 @@ class AuthController
         $request->session()->put('creative_landing_view', $defaultView);
 
         return redirect()->route('app');
+    }
+
+    private function defaultViewForRole(string $role): string
+    {
+        return match ($role) {
+            'Admin' => 'admin',
+            'Creative Manager', 'Coordinator' => 'flow',
+            'QC' => 'qc',
+            'Client' => 'approvals',
+            default => 'editor',
+        };
     }
 
     public function logout(Request $request): RedirectResponse
