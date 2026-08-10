@@ -6,6 +6,7 @@ const API_PROJECT_FOLDERS_URL = "/api/projects/folders";
 const API_UPLOAD_START_URL = "/api/assets/chunked/start";
 const API_PROXY_QUEUE_URL = "/api/assets/proxy/queue";
 let saveTimer = null;
+let lastDeviceNotificationAt = 0;
 const AUTH_USER = parseAuthUser();
 
 const workflowStages = [
@@ -29,21 +30,64 @@ const workflowStages = [
 ];
 
 const departments = [
-  "Graphic Design",
-  "Video Production",
-  "Marketing",
-  "Podcast Production",
-  "Content",
-  "Copywriting",
-  "Photography",
-  "Motion Graphics",
-  "Social Media",
-  "IT",
-  "Management",
-  "Freelancers",
-  "External Freelancers",
-  "Interns"
+  "Creative Operations"
 ];
+
+const projectTypes = [
+  "Client Campaign Video",
+  "Short-form Video",
+  "Podcast / Long-form Video",
+  "Internal Video",
+  "Production Support",
+  "Motion / Design Support",
+  "Publishing Package"
+];
+
+const workflowTemplates = [
+  ["none", "No auto tasks"],
+  ["standard-video", "Standard Video Production"],
+  ["short-form", "Short-form Social Video"],
+  ["podcast", "Podcast / Long-form Video"],
+  ["publishing-only", "Publishing Package Only"]
+];
+
+const workflowTaskTemplates = {
+  "standard-video": [
+    { name: "Complete creative brief", stage: "Planning", role: "owner", reviewer: "owner", hours: 4, dueOffset: 1 },
+    { name: "Scriptwriting", stage: "Script Writing", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 3 },
+    { name: "Script checking", stage: "Internal Review", role: "checker", reviewer: "owner", hours: 3, dueOffset: 4 },
+    { name: "Fact verification", stage: "Research", role: "verifier", reviewer: "owner", hours: 3, dueOffset: 5 },
+    { name: "Raw material readiness", stage: "Video Production", role: "producer", reviewer: "owner", hours: 4, dueOffset: 6 },
+    { name: "Editing and version submission", stage: "Editing", role: "editor", reviewer: "qc", hours: 24, dueOffset: 10 },
+    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 4, dueOffset: 11 },
+    { name: "Revision pass", stage: "Editing", role: "editor", reviewer: "qc", hours: 8, dueOffset: 12 },
+    { name: "Final verification", stage: "Final Review", role: "verifier", reviewer: "approver", hours: 3, dueOffset: 13 },
+    { name: "Manager approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 14 },
+    { name: "Publishing setup", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 15 }
+  ],
+  "short-form": [
+    { name: "Brief and platform requirements", stage: "Planning", role: "owner", reviewer: "owner", hours: 3, dueOffset: 1 },
+    { name: "Edit short-form cut", stage: "Editing", role: "editor", reviewer: "qc", hours: 10, dueOffset: 4 },
+    { name: "Subtitle and graphics pass", stage: "Motion Graphics", role: "designer", reviewer: "editor", hours: 5, dueOffset: 5 },
+    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 3, dueOffset: 6 },
+    { name: "Approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 7 },
+    { name: "Schedule and publish", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 8 }
+  ],
+  podcast: [
+    { name: "Episode brief and outline", stage: "Planning", role: "scriptwriter", reviewer: "owner", hours: 8, dueOffset: 2 },
+    { name: "Raw recording readiness", stage: "Video Production", role: "producer", reviewer: "owner", hours: 4, dueOffset: 4 },
+    { name: "Long-form edit", stage: "Editing", role: "editor", reviewer: "qc", hours: 30, dueOffset: 9 },
+    { name: "Audio mix", stage: "Sound Mixing", role: "audio", reviewer: "qc", hours: 10, dueOffset: 10 },
+    { name: "QC review", stage: "Quality Assurance", role: "qc", reviewer: "owner", hours: 5, dueOffset: 11 },
+    { name: "Approval", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 2, dueOffset: 12 },
+    { name: "Publish episode and clips", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 5, dueOffset: 14 }
+  ],
+  "publishing-only": [
+    { name: "Confirm final files and captions", stage: "Final Review", role: "publisher", reviewer: "owner", hours: 2, dueOffset: 1 },
+    { name: "Approval check", stage: "Client Approval", role: "approver", reviewer: "owner", hours: 1, dueOffset: 2 },
+    { name: "Schedule and publish", stage: "Publishing", role: "publisher", reviewer: "owner", hours: 3, dueOffset: 3 }
+  ]
+};
 
 const taskStatuses = [
   "Pending",
@@ -69,14 +113,12 @@ const navItems = [
   ["dashboard", "Dashboard", "grid"],
   ["editor", "My Work", "check"],
   ["projects", "Projects", "folder"],
-  ["videos", "Videos", "camera"],
+  ["videos", "Video Tracker", "camera"],
   ["tasks", "Tasks", "check"],
   ["qc", "QC", "stamp"],
   ["approvals", "Approvals", "stamp"],
-  ["assets", "Assets", "image"],
-  ["equipment", "Equipment", "camera"],
-  ["calendar", "Calendar", "calendar"],
-  ["team", "Team", "users"],
+  ["assets", "Server Links", "image"],
+  ["team", "Staff", "users"],
   ["reports", "Reports", "chart"],
   ["admin", "Admin", "gear"],
   ["settings", "Settings", "gear"]
@@ -89,12 +131,12 @@ const widgetLabels = {
   overdueProjects: "Overdue projects",
   upcomingDeadlines: "Upcoming deadlines",
   teamWorkload: "Team workload",
-  resourceUtilization: "Resource utilization",
+  serverLinks: "Server links",
+  proxyQueue: "Proxy queue",
   pendingApprovals: "Pending approvals",
   revisionRequests: "Revision requests",
   publishedContent: "Published content",
-  clientWaiting: "Client waiting approvals",
-  equipmentInUse: "Equipment in use"
+  clientWaiting: "Client waiting approvals"
 };
 
 const icons = {
@@ -125,7 +167,7 @@ const seed = {
     assetSearch: "",
     videoSearch: "",
     qcFilter: "All",
-    calendarOffset: 0
+    deviceNotifications: false
   },
   notifications: [
     { id: "nt-1", user: "Maya Noor", type: "editing_progress", title: "Editing progress updated", message: "Ari Lim updated Assemble rough cut v2 to 75%.", linkView: "tasks", read: false, createdAt: datePlus(0) },
@@ -140,12 +182,12 @@ const seed = {
       overdueProjects: true,
       upcomingDeadlines: true,
       teamWorkload: true,
-      resourceUtilization: true,
+      serverLinks: true,
+      proxyQueue: true,
       pendingApprovals: true,
       revisionRequests: true,
       publishedContent: true,
-      clientWaiting: true,
-      equipmentInUse: true
+      clientWaiting: true
     },
     security: {
       mfa: true,
@@ -153,7 +195,8 @@ const seed = {
       encryptedStorage: true,
       ipRestrictions: false,
       secureBackups: true
-    }
+    },
+    theme: "light"
   },
   projects: [
     {
@@ -161,9 +204,9 @@ const seed = {
       name: "Seasonal Product Launch Film",
       code: "CR-2026-001",
       client: "Finesse Foods",
-      department: "Video Production",
+      department: "Creative Operations",
       campaign: "Q3 Launch",
-      type: "Video",
+      type: "Client Campaign Video",
       priority: "High",
       status: "In Progress",
       description: "Hero launch film with cutdowns for paid social and retail screens.",
@@ -200,9 +243,9 @@ const seed = {
       name: "Annual Report Visual System",
       code: "CR-2026-002",
       client: "Northstar Capital",
-      department: "Graphic Design",
+      department: "Creative Operations",
       campaign: "Investor Relations",
-      type: "Design",
+      type: "Motion / Design Support",
       priority: "Medium",
       status: "Waiting Approval",
       description: "Design system, layout templates, icons, and executive presentation assets.",
@@ -238,9 +281,9 @@ const seed = {
       name: "Podcast Studio Pilot",
       code: "CR-2026-003",
       client: "Internal Marketing",
-      department: "Podcast Production",
+      department: "Creative Operations",
       campaign: "Thought Leadership",
-      type: "Podcast",
+      type: "Podcast / Long-form Video",
       priority: "High",
       status: "At Risk",
       description: "Pilot episode recording package with identity, sound design, and launch cuts.",
@@ -277,9 +320,9 @@ const seed = {
       name: "Retail Photography Refresh",
       code: "CR-2026-004",
       client: "Metro Retail Group",
-      department: "Photography",
+      department: "Creative Operations",
       campaign: "Store Refresh",
-      type: "Photography",
+      type: "Production Support",
       priority: "Low",
       status: "Planning",
       description: "Photography package for store signage, product displays, and web catalog.",
@@ -316,9 +359,9 @@ const seed = {
       name: "Independence Day Social Pack",
       code: "CR-2026-005",
       client: "Civic Arts Council",
-      department: "Social Media",
+      department: "Creative Operations",
       campaign: "National Day",
-      type: "Social Media",
+      type: "Publishing Package",
       priority: "Medium",
       status: "Completed",
       description: "Static and motion posts for event countdown and public service messaging.",
@@ -368,14 +411,7 @@ const seed = {
     approval("a-3", "p-1003", "Podcast identity board", "Marketing Manager", "Sofia Chan", "Revision Requested", datePlus(-1), "Needs alternate cover art"),
     approval("a-4", "p-1005", "Motion bumper", "Client", "Civic Client", "Approved", datePlus(-10), "Published")
   ],
-  equipment: [
-    equipment("e-1", "Cinema Camera A", "Camera", "CAM-A913", "Excellent", "In Use", "Ari Lim", datePlus(7), "2027-05-12", "2022-08-10", "2028-08-10"),
-    equipment("e-2", "Prime Lens 50mm", "Lens", "LEN-5030", "Good", "In Use", "Dina Rahman", datePlus(4), "2027-01-18", "2021-03-09", "2027-03-09"),
-    equipment("e-3", "Podcast Room", "Studio Room", "ROOM-POD", "Good", "Booked", "Amir Hassan", datePlus(2), "2026-11-02", "2020-01-01", "2030-01-01"),
-    equipment("e-4", "Drone Kit", "Drone", "DRN-778", "Maintenance", "Unavailable", "Ops", datePlus(14), "2026-08-20", "2023-06-15", "2026-12-15"),
-    equipment("e-5", "LED Lighting Set", "Lighting", "LGT-410", "Excellent", "Available", "", "", "2027-02-04", "2024-02-04", "2029-02-04"),
-    equipment("e-6", "Green Screen Studio", "Green Screen", "ROOM-GRN", "Good", "Available", "", "", "2026-10-10", "2019-09-01", "2029-09-01")
-  ],
+  equipment: [],
   assets: [
     asset("as-1", "Hero_RoughCut_v2.mov", "MOV", "p-1001", "Video", 2, ["rough-cut", "client-review"], "Waiting Approval", 18),
     asset("as-2", "AnnualReport_Master.indd", "INDD", "p-1002", "Project File", 5, ["layout", "source"], "Revision Required", 12),
@@ -384,14 +420,14 @@ const seed = {
     asset("as-5", "Retail_Shotlist.pdf", "PDF", "p-1004", "Brief", 1, ["shot-list", "photo"], "Approved", 5)
   ],
   team: [
-    person("u-1", "Maya Noor", "Creative Lead", "Management", "Admin", 88, ["Approval", "Resource planning", "Video review"]),
-    person("u-2", "Sofia Chan", "Design Manager", "Graphic Design", "Manager", 76, ["Design systems", "Client proofing"]),
-    person("u-3", "Ari Lim", "Video Editor", "Video Production", "Member", 92, ["Editing", "Color", "Motion"]),
-    person("u-4", "Dina Rahman", "Photographer", "Photography", "Member", 68, ["Product shoots", "Retouching"]),
-    person("u-5", "Ken Wong", "Audio Producer", "Podcast Production", "Member", 54, ["Mixing", "Voice cleanup"]),
-    person("u-6", "Rina Park", "Motion Designer", "Motion Graphics", "Freelancer", 61, ["Motion posts", "Explainers"]),
-    person("u-7", "Nur Ali", "Designer", "Graphic Design", "Member", 83, ["Reports", "Social templates"]),
-    person("u-8", "Chris Yap", "Production Assistant", "Interns", "Limited", 45, ["Studio prep", "Equipment logs"])
+    person("u-1", "Maya Noor", "Creative Lead", "Creative Operations", "Admin", 88, ["Approval", "Resource planning", "Video review"]),
+    person("u-2", "Sofia Chan", "Design Manager", "Creative Operations", "Manager", 76, ["Design systems", "Client proofing"]),
+    person("u-3", "Ari Lim", "Video Editor", "Creative Operations", "Member", 92, ["Editing", "Color", "Motion"]),
+    person("u-4", "Dina Rahman", "Production Coordinator", "Creative Operations", "Member", 68, ["Production prep", "Raw readiness checks"]),
+    person("u-5", "Ken Wong", "Audio Producer", "Creative Operations", "Member", 54, ["Mixing", "Voice cleanup"]),
+    person("u-6", "Rina Park", "Motion Designer", "Creative Operations", "Freelancer", 61, ["Motion posts", "Explainers"]),
+    person("u-7", "Nur Ali", "Designer", "Creative Operations", "Member", 83, ["Reports", "Social templates"]),
+    person("u-8", "Chris Yap", "Publishing Assistant", "Publishing", "Limited", 45, ["Scheduling", "Live URL checks"])
   ],
   announcements: [
     { id: "n-1", title: "Studio B unavailable", body: "Maintenance window booked for Friday afternoon.", date: datePlus(1), owner: "Operations" },
@@ -401,7 +437,7 @@ const seed = {
     logEntry("System", "Dashboard widgets updated", datePlus(-1)),
     logEntry("Maya Noor", "Approved access for freelancer role", datePlus(-2)),
     logEntry("Sofia Chan", "Created project CR-2026-002", datePlus(-26)),
-    logEntry("Ari Lim", "Uploaded Hero_RoughCut_v2.mov", datePlus(-3)),
+    logEntry("Ari Lim", "Registered Hero_RoughCut_v2.mov NAS path", datePlus(-3)),
     logEntry("Client", "Requested revision on podcast identity board", datePlus(-1))
   ],
   workflowWeightage: [
@@ -585,9 +621,23 @@ function mergeDefaults(current, defaults) {
   merged.videos = current.videos || defaults.videos || [];
   merged.qcRemarks = current.qcRemarks || defaults.qcRemarks || [];
   merged.ui = { ...defaults.ui, ...(current.ui || {}) };
+  merged.departments = departments;
+  merged.projects = safeList(merged.projects).map((project) => ({
+    ...project,
+    department: normalizeDepartmentName(project.department),
+    type: normalizeProjectType(project.type)
+  }));
+  merged.team = safeList(merged.team).map((personItem) => ({
+    ...personItem,
+    department: normalizeDepartmentName(personItem.department)
+  }));
+  if (merged.ui.projectDepartment && merged.ui.projectDepartment !== "All") {
+    merged.ui.projectDepartment = normalizeDepartmentName(merged.ui.projectDepartment);
+  }
   merged.settings = {
     ...defaults.settings,
     ...(current.settings || {}),
+    theme: (current.settings || {}).theme || defaults.settings.theme || "light",
     dashboardWidgets: {
       ...defaults.settings.dashboardWidgets,
       ...((current.settings || {}).dashboardWidgets || {})
@@ -598,6 +648,29 @@ function mergeDefaults(current, defaults) {
     }
   };
   return merged;
+}
+
+function normalizeDepartmentName(value) {
+  return departments[0];
+}
+
+function normalizeProjectType(value) {
+  const type = String(value || "").trim();
+  if (projectTypes.includes(type)) return type;
+
+  const map = {
+    Video: "Client Campaign Video",
+    Podcast: "Podcast / Long-form Video",
+    Design: "Motion / Design Support",
+    "Motion Graphics": "Motion / Design Support",
+    Photography: "Production Support",
+    "Social Media": "Publishing Package",
+    Marketing: "Publishing Package",
+    Copywriting: "Internal Video",
+    Freelancer: "Production Support"
+  };
+
+  return map[type] || projectTypes[0];
 }
 
 function parseAuthUser() {
@@ -631,7 +704,8 @@ function applyAuthContext() {
 }
 
 function isAdminRole(role = AUTH_USER?.role || state.ui.currentRole) {
-  return ["Admin", "Manager", "Director", "Creative Manager", "Project Manager", "Coordinator"].includes(role);
+  const normalized = String(role || "").trim().toLowerCase();
+  return ["admin", "administrator", "manager", "director", "creative manager", "project manager", "coordinator"].includes(normalized);
 }
 
 function defaultViewForRole(role = AUTH_USER?.role || state.ui.currentRole) {
@@ -641,9 +715,9 @@ function defaultViewForRole(role = AUTH_USER?.role || state.ui.currentRole) {
 }
 
 function navForRole(role = AUTH_USER?.role || state.ui.currentRole) {
-  const adminViews = ["dashboard", "admin", "projects", "videos", "tasks", "qc", "approvals", "assets", "equipment", "calendar", "team", "reports", "settings"];
-  const editorViews = ["editor", "videos", "tasks", "projects", "qc", "assets", "calendar", "approvals"];
-  const clientViews = ["approvals", "assets", "calendar"];
+  const adminViews = ["dashboard", "admin", "projects", "videos", "tasks", "qc", "approvals", "assets", "team", "reports", "settings"];
+  const editorViews = ["editor", "videos", "tasks", "projects", "qc", "assets", "approvals"];
+  const clientViews = ["approvals", "assets"];
   const allowed = isAdminRole(role) ? adminViews : role === "Client" ? clientViews : editorViews;
   return navItems.filter(([id]) => allowed.includes(id));
 }
@@ -680,8 +754,10 @@ async function syncState() {
 
 function render() {
   applyAuthContext();
+  applyTheme();
   const visibleNav = navForRole();
   if (!canView(state.ui.view)) state.ui.view = defaultViewForRole();
+  const viewHtml = safeRenderView();
   document.getElementById("app").innerHTML = `
     <div class="shell">
       <aside class="sidebar">
@@ -707,10 +783,29 @@ function render() {
         </div>
       </aside>
       <main class="main">
-        ${renderView()}
+        ${viewHtml}
       </main>
     </div>
   `;
+}
+
+function safeRenderView() {
+  try {
+    return renderView();
+  } catch (error) {
+    console.error(`Unable to render ${state.ui.view}`, error);
+    return `
+      ${topbar("View Error", "This workspace could not render because one saved record has incomplete data.", `
+        <button class="button" data-action="view" data-view="admin">Admin</button>
+        <button class="button" data-action="view" data-view="dashboard">Dashboard</button>
+      `)}
+      <section class="panel">
+        <div class="panel-body">
+          ${empty(String(error?.message || error || "Unknown render error"))}
+        </div>
+      </section>
+    `;
+  }
 }
 
 function renderView() {
@@ -733,8 +828,6 @@ function renderView() {
     qc: renderQc,
     approvals: renderApprovals,
     assets: renderAssets,
-    equipment: renderEquipment,
-    calendar: renderCalendar,
     team: renderTeam,
     reports: renderReports,
     admin: renderAdminCenter,
@@ -777,9 +870,30 @@ function personaControls() {
         <span>Role</span>
         <strong>${escapeHtml(AUTH_USER?.role || state.ui.currentRole || "Editor")}</strong>
       </div>
+      ${deviceNotificationButton()}
+      <button class="button compact" data-action="toggle-theme">${themeButtonLabel()}</button>
       <button class="button compact" data-action="logout">Logout</button>
     </div>
   `;
+}
+
+function themeButtonLabel() {
+  return state.settings?.theme === "dark" ? "Light Mode" : "Dark Mode";
+}
+
+function applyTheme() {
+  document.body.classList.toggle("dark-mode", state.settings?.theme === "dark");
+}
+
+function deviceNotificationButton() {
+  if (!("Notification" in window)) {
+    return "";
+  }
+
+  const permission = Notification.permission;
+  const enabled = state.ui.deviceNotifications && permission === "granted";
+  const label = enabled ? "Device Alerts On" : permission === "denied" ? "Device Alerts Blocked" : "Enable Device Alerts";
+  return `<button class="button compact" data-action="device-notifications" ${permission === "denied" ? "disabled" : ""}>${escapeHtml(label)}</button>`;
 }
 
 function renderDashboard() {
@@ -791,16 +905,16 @@ function renderDashboard() {
     kpi("overdueProjects", m.overdueProjects, "Past due date", "red"),
     kpi("upcomingDeadlines", m.upcomingDeadlines, "Due in 7 days", "yellow"),
     kpi("teamWorkload", `${m.avgWorkload}%`, "Average team load", "blue"),
-    kpi("resourceUtilization", `${m.resourceUtilization}%`, "Equipment booked", "green"),
+    kpi("serverLinks", m.serverLinks, "NAS paths recorded", "green"),
+    kpi("proxyQueue", m.proxyQueue, "Preview/proxy work", "blue"),
     kpi("pendingApprovals", m.pendingApprovals, "Awaiting sign off", "yellow"),
     kpi("revisionRequests", m.revisionRequests, "Open revision loops", "red"),
     kpi("publishedContent", m.publishedContent, "Final deliverables", "green"),
-    kpi("clientWaiting", m.clientWaiting, "Client-side queue", "yellow"),
-    kpi("equipmentInUse", m.equipmentInUse, "Checked out or booked", "blue")
+    kpi("clientWaiting", m.clientWaiting, "Client-side queue", "yellow")
   ].filter(Boolean).join("");
 
   return `
-    ${topbar("Department Dashboard", "Real-time portfolio status, workload, approvals, deadlines, and resource utilization.", `
+    ${topbar("Department Dashboard", "Real-time portfolio status, workload, approvals, deadlines, server-link readiness, and workflow risk.", `
       <button class="button primary" data-action="new-project"><span>+</span> New Project</button>
       <button class="button" data-action="view" data-view="reports">Reports</button>
     `)}
@@ -838,7 +952,7 @@ function renderDashboard() {
               <h2>Team Workload</h2>
               <p>Current allocation by user</p>
             </div>
-            <button class="button compact" data-action="view" data-view="team">Team</button>
+            <button class="button compact" data-action="view" data-view="team">Staff</button>
           </div>
           <div class="panel-body">
             <div class="chart-list">${state.team.map(personWorkloadBar).join("")}</div>
@@ -878,9 +992,9 @@ function renderEditorWorkspace() {
   return `
     ${topbar("My Work", "Assigned work, video progress, QC remarks, server links, and notifications in one workspace.", `
       <button class="button primary" data-action="new-task"><span>+</span> Task</button>
-      <button class="button" data-action="view" data-view="videos">Videos</button>
+      <button class="button" data-action="view" data-view="videos">Video Tracker</button>
       <button class="button" data-action="view" data-view="qc">QC</button>
-      <button class="button" data-action="view" data-view="assets">Assets</button>
+      <button class="button" data-action="view" data-view="assets">Server Links</button>
     `)}
     <section class="editor-hero">
       <div>
@@ -911,7 +1025,7 @@ function renderEditorWorkspace() {
       </button>
       <button class="quick-action" data-action="view" data-view="assets">
         <strong>${assets.length}</strong>
-        <span>Server Links</span>
+        <span>NAS Links</span>
       </button>
     </section>
     <section class="grid-2">
@@ -1021,7 +1135,7 @@ function userServerLinkCard(project) {
       <div class="item-meta">${escapeHtml(project.name)}</div>
       <div class="detail-grid">
         ${detail("Folder", project.nasFolder || "Not created")}
-        ${detail("Assets", assets.length)}
+        ${detail("Server Links", assets.length)}
         ${detail("Preview", assets.find((assetItem) => assetItem.proxyPath)?.proxyPath || "No proxy linked")}
       </div>
       <button class="button compact" data-action="select-member-project" data-id="${escapeAttr(project.id)}">Open Project</button>
@@ -1063,7 +1177,7 @@ function renderMemberTasks() {
   return `
     ${topbar("My Tasks", "Your assigned and review tasks, ordered by deadline.", `
       <button class="button" data-action="view" data-view="editor">My Work</button>
-      <button class="button" data-action="view" data-view="assets">My Assets</button>
+      <button class="button" data-action="view" data-view="assets">Server Links</button>
     `)}
     <section class="panel">
       <div class="panel-header">
@@ -1084,11 +1198,11 @@ function renderMemberAssets() {
   const projectIds = new Set(memberProjects(user).map((project) => project.id));
   const assets = state.assets.filter((assetItem) => projectIds.has(assetItem.projectId));
   return `
-    ${topbar("My Assets", "Files and deliverables attached to your assigned projects.", `
+    ${topbar("My Server Links", "NAS paths, preview links, versions, and final output references attached to your assigned projects.", `
       <button class="button" data-action="view" data-view="editor">My Work</button>
-      <button class="button" data-action="new-asset"><span>+</span> Upload</button>
+      <button class="button" data-action="new-asset"><span>+</span> Register Link</button>
     `)}
-    <section class="asset-grid">${assets.map(assetCard).join("") || empty("No assets are linked to your assigned projects yet.")}</section>
+    <section class="asset-grid">${assets.map(assetCard).join("") || empty("No server links are attached to your assigned projects yet.")}</section>
   `;
 }
 
@@ -1111,7 +1225,7 @@ function memberProjectCard(project) {
       <div class="button-row">
         <button class="button compact" data-action="select-member-project" data-id="${escapeAttr(project.id)}">Open Details</button>
         <button class="button compact" data-action="view" data-view="tasks">Tasks</button>
-        <button class="button compact" data-action="view" data-view="assets">Assets</button>
+        <button class="button compact" data-action="view" data-view="assets">Server Links</button>
       </div>
     </article>
   `;
@@ -1121,7 +1235,7 @@ function memberProjectDetail(project, user) {
   const tasks = state.tasks.filter((taskItem) => taskItem.projectId === project.id && (taskItem.assignee === user || taskItem.reviewer === user));
   const assets = state.assets.filter((assetItem) => assetItem.projectId === project.id);
   return `
-    <div class="panel">
+    <div class="panel project-detail">
       <div class="panel-header">
         <div>
           <h2>${escapeHtml(project.name)}</h2>
@@ -1137,7 +1251,7 @@ function memberProjectDetail(project, user) {
           ${detail("Manager", project.assignedManager)}
           ${detail("Platform", project.platform)}
           ${detail("Your Tasks", tasks.length)}
-          ${detail("Project Assets", assets.length)}
+          ${detail("Server Links", assets.length)}
         </div>
         <div class="list">${tasks.map(editorTaskCard).join("") || empty("No assigned tasks in this project.")}</div>
       </div>
@@ -1147,123 +1261,129 @@ function memberProjectDetail(project, user) {
 
 function renderAdminCenter() {
   const m = metrics();
-  const riskProjects = state.projects.filter((project) => project.status === "At Risk" || (project.deadline < toISO(new Date()) && project.status !== "Completed"));
-  const blockedTasks = state.tasks.filter((taskItem) => ["Blocked", "Revision Required"].includes(taskItem.status));
-  const pendingApprovals = state.approvals.filter((approvalItem) => approvalItem.status === "Pending" || approvalItem.status === "Revision Requested");
-  const heavyUsers = state.team.filter((personItem) => personItem.utilization >= 80);
-  const flaggedVideos = (state.videos || []).filter((video) => ["Red", "Critical"].includes(video.redFlag));
-  const majorRemarks = (state.qcRemarks || []).filter((remark) => ["Major", "Critical"].includes(remark.severity) && !["Resolved", "Closed"].includes(remark.status));
-  const proxyNeeded = state.assets.filter((asset) => asset.processingStatus === "proxy_needed");
-  const staleTasks = state.tasks.filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status) && (taskItem.lastProgressAt || taskItem.startDate || taskItem.dueDate) < datePlus(-3));
+  const activeProjects = safeList(state.projects).filter((project) => project.status !== "Completed");
+  const riskProjects = safeList(state.projects).filter((project) => project.status === "At Risk" || (project.deadline < toISO(new Date()) && project.status !== "Completed"));
+  const blockedTasks = safeList(state.tasks).filter((taskItem) => ["Blocked", "Revision Required"].includes(taskItem.status));
+  const pendingApprovals = safeList(state.approvals).filter((approvalItem) => approvalItem.status === "Pending" || approvalItem.status === "Revision Requested");
+  const heavyUsers = safeList(state.team).filter((personItem) => personItem.utilization >= 80);
+  const flaggedVideos = safeList(state.videos).filter((video) => ["Red", "Critical"].includes(video.redFlag));
+  const majorRemarks = safeList(state.qcRemarks).filter((remark) => ["Major", "Critical"].includes(remark.severity) && !["Resolved", "Closed"].includes(remark.status));
+  const proxyNeeded = safeList(state.assets).filter((asset) => asset.processingStatus === "proxy_needed");
+  const staleTasks = safeList(state.tasks).filter((taskItem) => !["Completed", "Cancelled"].includes(taskItem.status) && (taskItem.lastProgressAt || taskItem.startDate || taskItem.dueDate) < datePlus(-3));
+  const urgentItems = [
+    ...flaggedVideos.map(adminVideoAlert),
+    ...majorRemarks.map(adminRemarkAlert),
+    ...riskProjects.map(adminProjectAlert),
+    ...blockedTasks.map(adminTaskAlert),
+    ...pendingApprovals.map(adminApprovalAlert)
+  ];
 
   return `
-    ${topbar("Admin Center", "Management cockpit for red flags, QC, approvals, workload, server readiness, and publishing risk.", `
-      <button class="button primary" data-action="new-announcement"><span>+</span> Announcement</button>
-      <button class="button" data-action="view" data-view="videos">Videos</button>
-      <button class="button" data-action="view" data-view="qc">QC</button>
-      <button class="button" data-action="view" data-view="settings">Settings</button>
+    ${topbar("Admin Center", "Department control room for project risk, review queues, storage readiness, and team load.", `
+      <button class="button primary" data-action="new-project"><span>+</span> Project</button>
+      <button class="button" data-action="new-task"><span>+</span> Task</button>
+      <button class="button" data-action="new-announcement"><span>+</span> Announcement</button>
     `)}
-    <section class="widget-grid">
-      ${summaryCard("At Risk", riskProjects.length, "Projects")}
-      ${summaryCard("Blocked", blockedTasks.length, "Tasks")}
-      ${summaryCard("Approvals", pendingApprovals.length, "Open queue")}
-      ${summaryCard("Red Flags", flaggedVideos.length, "Videos")}
-      ${summaryCard("QC Remarks", majorRemarks.length, "Major open")}
-      ${summaryCard("Proxy Queue", proxyNeeded.length, "Assets")}
-      ${summaryCard("Stale", staleTasks.length, "No recent progress")}
-      ${summaryCard("Utilization", `${m.avgWorkload}%`, "Team average")}
+    <section class="admin-health">
+      ${adminMetric("Active Projects", activeProjects.length, "Live scopes", "blue")}
+      ${adminMetric("Needs Attention", urgentItems.length, "Open issues", urgentItems.length ? "red" : "green")}
+      ${adminMetric("Approvals", pendingApprovals.length, "Awaiting action", pendingApprovals.length ? "yellow" : "green")}
+      ${adminMetric("Team Load", `${m.avgWorkload}%`, "Average utilization", m.avgWorkload >= 80 ? "red" : "blue")}
     </section>
-    <section class="quick-actions admin-actions">
-      <button class="quick-action" data-action="view" data-view="projects">
-        <strong>${state.projects.filter((project) => project.status !== "Completed").length}</strong>
-        <span>Active Projects</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="videos">
-        <strong>${flaggedVideos.length}</strong>
-        <span>Video Risks</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="qc">
-        <strong>${majorRemarks.length}</strong>
-        <span>QC Escalations</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="approvals">
-        <strong>${pendingApprovals.length}</strong>
-        <span>Approvals</span>
-      </button>
-      <button class="quick-action" data-action="view" data-view="assets">
-        <strong>${proxyNeeded.length}</strong>
-        <span>Proxy Needed</span>
-      </button>
+    <section class="admin-actions-grid">
+      ${adminAction("Projects", activeProjects.length, "Open register", "projects")}
+      ${adminAction("Tasks", blockedTasks.length + staleTasks.length, "Blocked or stale", "tasks")}
+      ${adminAction("Videos", flaggedVideos.length, "Red flags", "videos")}
+      ${adminAction("QC", majorRemarks.length, "Major remarks", "qc")}
+      ${adminAction("Approvals", pendingApprovals.length, "Pending sign-off", "approvals")}
+      ${adminAction("Server Links", proxyNeeded.length, "Proxy queue", "assets")}
     </section>
-    <section class="grid-2">
-      <div class="panel">
+    <section class="admin-command-layout">
+      <div class="panel admin-main-panel">
         <div class="panel-header">
           <div>
-            <h2>Needs Attention</h2>
-            <p>Risk, blocked work, QC, and client waits</p>
+            <h2>Priority Queue</h2>
+            <p>Items that need admin decision or follow-up</p>
           </div>
+          <button class="button compact" data-action="view" data-view="reports">Reports</button>
         </div>
         <div class="panel-body">
-          <div class="list">
-            ${flaggedVideos.map(adminVideoAlert).join("")}
-            ${majorRemarks.map(adminRemarkAlert).join("")}
-            ${riskProjects.map(adminProjectAlert).join("")}
-            ${blockedTasks.map(adminTaskAlert).join("")}
-            ${pendingApprovals.map(adminApprovalAlert).join("")}
-            ${(!flaggedVideos.length && !majorRemarks.length && !riskProjects.length && !blockedTasks.length && !pendingApprovals.length) ? empty("No urgent admin items right now.") : ""}
+          <div class="admin-list">
+            ${urgentItems.slice(0, 12).join("") || empty("No urgent admin items right now.")}
           </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Workload Watch</h2>
-            <p>Users above 80% utilization</p>
+      <aside class="admin-side-rail">
+        <div class="panel">
+          <div class="panel-header compact-header">
+            <div>
+              <h2>Workload</h2>
+              <p>${(heavyUsers.length ? heavyUsers : safeList(state.team)).length} people shown</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="chart-list">${(heavyUsers.length ? heavyUsers : safeList(state.team)).slice(0, 6).map(personWorkloadBar).join("")}</div>
           </div>
         </div>
-        <div class="panel-body">
-          <div class="chart-list">
-            ${(heavyUsers.length ? heavyUsers : state.team).map(personWorkloadBar).join("")}
+        <div class="panel">
+          <div class="panel-header compact-header">
+            <div>
+              <h2>Storage</h2>
+              <p>NAS and proxy readiness</p>
+            </div>
+            <button class="button compact" data-action="view" data-view="assets">Server Links</button>
+          </div>
+          <div class="panel-body">
+            <div class="admin-list compact-list">${proxyNeeded.slice(0, 4).map(adminAssetAlert).join("") || empty("No proxy work waiting.")}</div>
           </div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Server Readiness</h2>
-            <p>NAS folder, raw readiness, proxy and preview state</p>
+        <div class="panel">
+          <div class="panel-header compact-header">
+            <div>
+              <h2>Publishing</h2>
+              <p>Scheduled, ready, or missing live links</p>
+            </div>
           </div>
-          <button class="button compact" data-action="view" data-view="assets">Assets</button>
-        </div>
-        <div class="panel-body">
-          <div class="list">
-            ${proxyNeeded.map(adminAssetAlert).join("") || empty("No proxy work waiting.")}
+          <div class="panel-body">
+            <div class="admin-list compact-list">${publishingWatchItems().slice(0, 4).join("") || empty("No publishing blockers right now.")}</div>
           </div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Equipment Status</h2>
-            <p>Booked, in use, or unavailable</p>
+        <div class="panel">
+          <div class="panel-header compact-header">
+            <div>
+              <h2>Notifications</h2>
+              <p>Latest department messages</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="admin-list compact-list">${safeList(state.notifications).slice(0, 5).map(notificationItem).join("") || empty("No notifications yet.")}</div>
           </div>
         </div>
-        <div class="panel-body">
-          <div class="list">${state.equipment.filter((item) => item.availability !== "Available").map(equipmentMiniItem).join("") || empty("All tracked equipment is available.")}</div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>All Notifications</h2>
-            <p>Latest department messages</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="list">${(state.notifications || []).slice(0, 8).map(notificationItem).join("") || empty("No notifications yet.")}</div>
-        </div>
-      </div>
+      </aside>
     </section>
+  `;
+}
+
+function adminMetric(title, value, note, tone = "blue") {
+  return `
+    <article class="admin-metric ${escapeAttr(tone)}">
+      <span class="status-dot ${escapeAttr(tone)}"></span>
+      <div>
+        <strong>${escapeHtml(String(value))}</strong>
+        <span>${escapeHtml(title)}</span>
+        <small>${escapeHtml(note)}</small>
+      </div>
+    </article>
+  `;
+}
+
+function adminAction(title, value, note, view) {
+  return `
+    <button class="admin-action-card" data-action="view" data-view="${escapeAttr(view)}">
+      <strong>${escapeHtml(String(value))}</strong>
+      <span>${escapeHtml(title)}</span>
+      <small>${escapeHtml(note)}</small>
+    </button>
   `;
 }
 
@@ -1301,7 +1421,7 @@ function renderProjects() {
         <select id="project-status" data-input="projectStatus">${options(["All", "Planning", "In Progress", "Waiting Approval", "At Risk", "Completed"], state.ui.projectStatus)}</select>
       </div>
       <div class="field">
-        <label for="project-department">Department</label>
+        <label for="project-department">Owner Team</label>
         <select id="project-department" data-input="projectDepartment">${options(["All", ...departments], state.ui.projectDepartment)}</select>
       </div>
       <div class="field">
@@ -1309,7 +1429,7 @@ function renderProjects() {
         <input id="project-count" value="${projects.length} shown" disabled>
       </div>
     </section>
-    <section class="grid-2">
+    <section class="grid-2 project-layout">
       <div class="panel">
         <div class="panel-header">
           <div>
@@ -1323,7 +1443,7 @@ function renderProjects() {
               <tr>
                 <th>Code</th>
                 <th>Project</th>
-                <th>Department</th>
+                <th>Owner Team</th>
                 <th>Status</th>
                 <th>Deadline</th>
                 <th>Progress</th>
@@ -1360,13 +1480,15 @@ function projectRow(project) {
 }
 
 function projectDetail(project) {
-  const relatedTasks = state.tasks.filter((taskItem) => taskItem.projectId === project.id);
-  const projectApprovals = state.approvals.filter((approvalItem) => approvalItem.projectId === project.id);
-  const projectAssets = state.assets.filter((assetItem) => assetItem.projectId === project.id);
+  const relatedTasks = safeList(state.tasks).filter((taskItem) => taskItem.projectId === project.id);
+  const projectApprovals = safeList(state.approvals).filter((approvalItem) => approvalItem.projectId === project.id);
+  const projectAssets = safeList(state.assets).filter((assetItem) => assetItem.projectId === project.id);
   const projectComments = commentsForProject(project.id);
   const projectActivity = activityForProject(project.id);
+  const completedTasks = relatedTasks.filter((taskItem) => taskItem.status === "Completed").length;
+  const pendingApprovals = projectApprovals.filter((item) => item.status === "Pending").length;
   return `
-    <div class="panel">
+    <div class="panel project-detail">
       <div class="panel-header">
         <div>
           <h2>${escapeHtml(project.name)}</h2>
@@ -1380,63 +1502,65 @@ function projectDetail(project) {
         </div>
       </div>
       <div class="panel-body app-grid">
-        <div class="chip-row">
-          ${pill(project.priority)}
-          ${pill(project.status)}
-          <span class="tag">${escapeHtml(project.department)}</span>
-          <span class="tag">${escapeHtml(project.workflowStage)}</span>
-        </div>
-        <div class="progress"><span style="--value:${projectProgress(project)}%"></span></div>
-        <div class="detail-grid">
-          ${detail("Manager", project.assignedManager)}
-          ${detail("Team", project.assignedTeamMembers.join(", "))}
-          ${detail("Campaign", project.campaign)}
-          ${detail("Platform", project.platform)}
-          ${detail("Budget", money(project.budget))}
-          ${detail("Hours", `${project.actualHours} / ${project.estimatedHours}`)}
-          ${detail("Start", formatDate(project.startDate))}
-          ${detail("Deadline", formatDate(project.deadline))}
-          ${detail("NAS Folder", project.nasFolder || "Not created")}
-          ${detail("Access", accessList(project).join(", "))}
-        </div>
-        <div>
-          <h3>Workflow</h3>
-          <div class="workflow-track">${workflowStages.map((stage) => workflowStage(project.workflowStage, stage)).join("")}</div>
-        </div>
-        <div class="detail-grid">
-          ${detail("Objectives", project.objectives)}
-          ${detail("Target Audience", project.targetAudience)}
-          ${detail("Internal Notes", project.internalNotes)}
-          ${detail("Client Notes", project.clientNotes)}
-        </div>
-        <div>
-          <h3>Creative Brief</h3>
-          <div class="detail-grid">${renderBrief(project.creativeBrief)}</div>
-        </div>
-        <div class="grid-3">
-          ${miniList("Milestones", project.milestones)}
-          ${miniList("Deliverables", project.deliverables)}
-          ${miniList("Tags", project.tags)}
-        </div>
-        <div class="grid-3">
-          ${summaryCard("Tasks", relatedTasks.length, `${relatedTasks.filter((taskItem) => taskItem.status === "Completed").length} completed`)}
-          ${summaryCard("Approvals", projectApprovals.length, `${projectApprovals.filter((item) => item.status === "Pending").length} pending`)}
-          ${summaryCard("Assets", projectAssets.length, `${projectAssets.reduce((sum, item) => sum + item.downloads, 0)} downloads`)}
-        </div>
-        <section class="grid-2">
+        <section class="project-snapshot">
           <div>
-            <h3>Project Assets</h3>
-            <div class="list">${projectAssets.slice(0, 4).map(projectAssetMini).join("") || empty("No assets linked yet.")}</div>
+            <div class="chip-row">
+              ${pill(project.priority)}
+              ${pill(project.status)}
+              <span class="tag">${escapeHtml(project.workflowStage)}</span>
+            </div>
+            <div class="progress"><span style="--value:${projectProgress(project)}%"></span></div>
           </div>
-          <div>
-            <h3>Activity Timeline</h3>
-            <div class="timeline">${projectActivity.slice(0, 8).map(activityItem).join("") || empty("No project activity yet.")}</div>
+          <div class="snapshot-grid">
+            ${summaryCard("Tasks", relatedTasks.length, `${completedTasks} done`)}
+            ${summaryCard("Approvals", projectApprovals.length, `${pendingApprovals} pending`)}
+            ${summaryCard("Server Links", projectAssets.length, `${projectAssets.length} linked`)}
           </div>
         </section>
-        <div>
-          <h3>Comments</h3>
-          <div class="list">${projectComments.slice(0, 6).map(commentItem).join("") || empty("No comments yet.")}</div>
-        </div>
+        ${disclosure("Overview", `
+          <div class="detail-grid">
+            ${detail("Manager", project.assignedManager)}
+            ${detail("Team", safeList(project.assignedTeamMembers).join(", "))}
+            ${detail("Deadline", formatDate(project.deadline))}
+            ${detail("Owner Team", project.department)}
+            ${detail("Campaign", project.campaign)}
+            ${detail("Platform", project.platform)}
+            ${detail("Budget", money(project.budget))}
+            ${detail("Hours", `${project.actualHours} / ${project.estimatedHours}`)}
+            ${detail("NAS Folder", project.nasFolder || "Not created")}
+            ${detail("Access", accessList(project).join(", "))}
+          </div>
+        `, true)}
+        ${disclosure("Workflow", `<div class="workflow-track">${workflowStages.map((stage) => workflowStage(project.workflowStage, stage)).join("")}</div>`)}
+        ${disclosure("Brief", `
+          <div class="detail-grid">
+            ${detail("Objectives", project.objectives)}
+            ${detail("Target Audience", project.targetAudience)}
+            ${detail("Internal Notes", project.internalNotes)}
+            ${detail("Client Notes", project.clientNotes)}
+          </div>
+          <div class="detail-grid">${renderBrief(project.creativeBrief)}</div>
+        `)}
+        ${disclosure("Deliverables", `
+          <div class="grid-3">
+            ${miniList("Milestones", project.milestones)}
+            ${miniList("Deliverables", project.deliverables)}
+            ${miniList("Tags", project.tags)}
+          </div>
+        `)}
+        ${disclosure("Files And Activity", `
+          <section class="grid-2">
+            <div>
+              <h3>Server References</h3>
+              <div class="list">${projectAssets.slice(0, 4).map(projectAssetMini).join("") || empty("No server links registered yet.")}</div>
+            </div>
+            <div>
+              <h3>Activity Timeline</h3>
+              <div class="timeline">${projectActivity.slice(0, 8).map(activityItem).join("") || empty("No project activity yet.")}</div>
+            </div>
+          </section>
+        `)}
+        ${disclosure("Comments", `<div class="list">${projectComments.slice(0, 6).map(commentItem).join("") || empty("No comments yet.")}</div>`)}
       </div>
     </div>
   `;
@@ -1579,6 +1703,7 @@ function videoTrackerCard(video) {
       </div>
       <div class="button-row">
         <button class="button compact" data-action="view" data-view="qc">QC Remarks</button>
+        <button class="button compact" data-action="new-qc-remark" data-video="${escapeAttr(video.id)}">Add QC</button>
         <button class="button compact" data-action="select-project" data-id="${escapeAttr(video.projectId)}">Project</button>
       </div>
     </article>
@@ -1593,6 +1718,7 @@ function renderQc() {
     .filter((remark) => isAdminRole() || remark.assignedTo === user || remark.createdBy === user);
   return `
     ${topbar("QC / Verification", "Structured checklist decisions, timecode remarks, severity, assigned correction owners, and resolution status.", `
+      <button class="button primary" data-action="new-qc-remark"><span>+</span> QC Remark</button>
       <button class="button" data-action="view" data-view="videos">Video Tracker</button>
     `)}
     <section class="filters">
@@ -1659,9 +1785,16 @@ function qcRemarkCard(remark) {
         ${detail("Assigned To", remark.assignedTo)}
         ${detail("Created By", remark.createdBy)}
         ${detail("Status", remark.status)}
+        ${detail("Decision", remark.decision || "Pending")}
         ${detail("Resolution Version", remark.resolutionVersion || "Pending")}
         ${detail("Repeated", remark.repeated ? "Yes" : "No")}
         ${detail("Created", formatDate(remark.createdAt))}
+      </div>
+      <div class="button-row">
+        <button class="button compact" data-action="qc-status" data-id="${escapeAttr(remark.id)}" data-status="Acknowledged">Acknowledge</button>
+        <button class="button compact" data-action="qc-status" data-id="${escapeAttr(remark.id)}" data-status="Resolved">Mark Fixed</button>
+        <button class="button compact" data-action="qc-status" data-id="${escapeAttr(remark.id)}" data-status="Reopened">Reopen</button>
+        <button class="button compact" data-action="edit-qc-remark" data-id="${escapeAttr(remark.id)}">Edit</button>
       </div>
     </article>
   `;
@@ -1736,14 +1869,16 @@ function taskCard(taskItem) {
       </div>
       <div class="progress"><span style="--value:${progress}%"></span></div>
       <div class="small muted">${progress}% complete</div>
-      <select data-action="task-status" data-id="${taskItem.id}" aria-label="Task status">
-        ${options(taskStatuses, taskItem.status)}
-      </select>
-      <div class="task-actions">
-        <button class="button compact" data-action="update-progress" data-id="${taskItem.id}">Progress</button>
-        <button class="button compact" data-action="edit-task" data-id="${taskItem.id}">Edit</button>
-        <button class="button compact" data-action="comment-task" data-id="${taskItem.id}">Comment</button>
-        <button class="button compact" data-action="request-task-revision" data-id="${taskItem.id}">Revision</button>
+      <div class="task-card-footer">
+        <select data-action="task-status" data-id="${taskItem.id}" aria-label="Task status">
+          ${options(taskStatuses, taskItem.status)}
+        </select>
+        <div class="task-actions">
+          <button class="button compact primary" data-action="update-progress" data-id="${taskItem.id}">Update</button>
+          <button class="button compact" data-action="edit-task" data-id="${taskItem.id}">Edit</button>
+          <button class="button compact" data-action="comment-task" data-id="${taskItem.id}">Note</button>
+          <button class="button compact" data-action="request-task-revision" data-id="${taskItem.id}">Revision</button>
+        </div>
       </div>
     </article>
   `;
@@ -1916,6 +2051,30 @@ function equipmentMiniItem(item) {
   `;
 }
 
+function publishingWatchItems() {
+  return safeList(state.videos)
+    .filter((video) => {
+      const stage = String(video.currentStage || "");
+      const status = String(video.status || "");
+      return ["Final Verification", "Approval", "Ready to Publish", "Publishing", "Published"].some((value) => stage.includes(value) || status.includes(value));
+    })
+    .map((video) => {
+      const project = projectById(video.projectId);
+      return `
+        <article class="list-item">
+          <div class="item-head">
+            <div>
+              <div class="item-title">${escapeHtml(video.title)}</div>
+              <div class="item-meta">${escapeHtml(project?.code || video.id)} | ${escapeHtml(video.status || video.currentStage || "Publishing check")}</div>
+            </div>
+            ${pill(video.redFlag || "Green")}
+          </div>
+          <button class="button compact" data-action="view" data-view="videos">Video Tracker</button>
+        </article>
+      `;
+    });
+}
+
 function renderApprovals() {
   const pending = state.approvals.filter((item) => item.status !== "Approved");
   return `
@@ -1963,7 +2122,7 @@ function approvalItem(item) {
       <p class="muted small">${escapeHtml(item.notes)}</p>
       <div class="item-meta">
         <span>Due ${formatDate(item.dueDate)}</span>
-        <span>${item.comments.length} comments</span>
+        <span>${safeList(item.comments).length} comments</span>
       </div>
       <div class="button-row">
         <button class="button compact" data-action="approval-decision" data-id="${item.id}" data-decision="Approved">Approve</button>
@@ -1975,34 +2134,34 @@ function approvalItem(item) {
 }
 
 function renderAssets() {
-  const term = state.ui.assetSearch.trim().toLowerCase();
-  const assets = state.assets.filter((item) => {
+  const term = String(state.ui.assetSearch || "").trim().toLowerCase();
+  const assets = safeList(state.assets).filter((item) => {
     if (!term) return true;
-    return [item.name, item.format, item.category, item.status, projectById(item.projectId)?.name, ...item.tags].join(" ").toLowerCase().includes(term);
+    return [item.name, item.format, item.category, item.status, projectById(item.projectId)?.name, ...safeList(item.tags)].join(" ").toLowerCase().includes(term);
   });
   return `
-    ${topbar("Asset Library", "Versioned project files, final deliverables, approvals, tags, previews, and download history.", `
-      <button class="button primary" data-action="new-asset"><span>+</span> Upload</button>
+    ${topbar("Server Links", "Tracks NAS folders, preview paths, version history, proxy readiness, final output links, and publishing references.", `
+      <button class="button primary" data-action="new-asset"><span>+</span> Register Link</button>
     `)}
     <section class="filters">
       <div class="field">
         <label for="asset-search">Search</label>
-        <input id="asset-search" data-input="assetSearch" value="${escapeAttr(state.ui.assetSearch)}" placeholder="Asset, tag, project, format">
+        <input id="asset-search" data-input="assetSearch" value="${escapeAttr(state.ui.assetSearch)}" placeholder="Path, file, project, tag, format">
       </div>
       <div class="field">
-        <label>Formats</label>
-        <input value="PSD AI INDD Figma PR AE PDF MP4 MOV" disabled>
+        <label>Reference Types</label>
+        <input value="RAW PROJECT PREVIEW FINAL DOC" disabled>
       </div>
       <div class="field">
-        <label>Assets</label>
+        <label>Server Links</label>
         <input value="${assets.length} shown" disabled>
       </div>
       <div class="field">
-        <label>Duplicates</label>
-        <input value="${duplicateCount()} possible" disabled>
+        <label>Proxy Queue</label>
+        <input value="${safeList(state.assets).filter((item) => item.processingStatus === "proxy_needed").length} waiting" disabled>
       </div>
     </section>
-    <section class="asset-grid">${assets.map(assetCard).join("") || empty("No assets match the current search.")}</section>
+    <section class="asset-grid">${assets.map(assetCard).join("") || empty("No server links match the current search.")}</section>
   `;
 }
 
@@ -2016,26 +2175,33 @@ function assetCard(item) {
         <div class="item-head">
           <div>
             <div class="item-title">${escapeHtml(item.name)}</div>
-            <div class="item-meta">${escapeHtml(project?.code || "No project")} | v${item.version} | ${versions.length} versions | ${formatBytes(item.fileSize)} | ${item.downloads} path copies</div>
+            <div class="item-meta">${escapeHtml(project?.code || "No project")} | v${item.version} | ${formatBytes(item.fileSize)}</div>
           </div>
           ${pill(item.status)}
         </div>
-        <div class="detail-grid">
-          ${detail("Storage", item.storageDisk || "nas")}
-          ${detail("Upload", statusLabel(item.uploadStatus || "metadata_only"))}
-          ${detail("Processing", statusLabel(item.processingStatus || "not_started"))}
-          ${detail("NAS Path", item.storagePath || "Not linked")}
-          ${detail("Proxy", item.proxyPath || "Not queued")}
+        <div class="asset-status-row">
+          ${pill(statusLabel(item.uploadStatus || "metadata_only"))}
+          ${pill(statusLabel(item.processingStatus || "not_started"))}
+          <span class="tag">${versions.length} versions</span>
+          <span class="tag">${Number(item.downloads || 0)} path copies</span>
         </div>
-        <div class="tag-list">${item.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
-        <div class="button-row">
-          <button class="button compact" data-action="asset-version" data-id="${item.id}">Version</button>
-          <button class="button compact" data-action="preview-asset" data-id="${item.id}">Preview</button>
+        <div class="tag-list">${safeList(item.tags).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
+        <div class="asset-actions">
+          <button class="button compact primary" data-action="preview-asset" data-id="${item.id}">Preview</button>
           <button class="button compact" data-action="queue-proxy" data-id="${item.id}">Proxy</button>
-          <button class="button compact" data-action="comment-asset" data-id="${item.id}">Comment</button>
           <button class="button compact" data-action="asset-download" data-id="${item.id}">Copy Path</button>
+          <button class="button compact" data-action="asset-version" data-id="${item.id}">Version</button>
+          <button class="button compact" data-action="comment-asset" data-id="${item.id}">Note</button>
         </div>
-        ${versions.length ? `<div class="version-strip">${versions.slice(0, 4).map((version) => `<span class="tag">v${version.version} ${formatDate(version.createdAt)}</span>`).join("")}</div>` : ""}
+        ${disclosure("Storage Paths", `
+          <div class="detail-grid">
+            ${detail("Storage", item.storageDisk || "nas")}
+            ${detail("NAS Path", item.storagePath || "Not linked")}
+            ${detail("Proxy", item.proxyPath || "Not queued")}
+            ${detail("Preview", item.previewPath || "Not ready")}
+          </div>
+          ${versions.length ? `<div class="version-strip">${versions.slice(0, 4).map((version) => `<span class="tag">v${version.version} ${formatDate(version.createdAt)}</span>`).join("")}</div>` : ""}
+        `)}
       </div>
     </article>
   `;
@@ -2162,7 +2328,7 @@ function calendarGrid(base, events) {
 function renderTeam() {
   const workload = Object.fromEntries(state.team.map((personItem) => [personItem.name, assignedTaskHours(personItem.name)]));
   return `
-    ${topbar("Team Management", "Departments, roles, permissions, utilization, external users, and audit ownership.", `
+    ${topbar("Staff Management", "Workflow departments, roles, permissions, utilization, and audit ownership.", `
       <button class="button primary" data-action="new-user"><span>+</span> User</button>
     `)}
     <section class="team-grid">
@@ -2297,6 +2463,20 @@ function renderSettings() {
       <div class="panel">
         <div class="panel-header">
           <div>
+            <h2>Appearance</h2>
+            <p>Workspace display mode</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <label class="switch-row">
+            <span>Dark mode</span>
+            <input type="checkbox" data-setting="theme" data-key="dark" ${state.settings.theme === "dark" ? "checked" : ""}>
+          </label>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
             <h2>Workflow Stages</h2>
             <p>${workflowStages.length} configured stages</p>
           </div>
@@ -2336,7 +2516,10 @@ async function onClick(event) {
 
   const { action } = target.dataset;
   if (action === "view") {
-    if (!canView(target.dataset.view)) return;
+    if (!canView(target.dataset.view)) {
+      showWorkflowError(`Your current role cannot open ${target.dataset.view || "this view"}.`);
+      return;
+    }
     state.ui.view = target.dataset.view;
     saveState();
     render();
@@ -2345,6 +2528,22 @@ async function onClick(event) {
   }
   if (action === "logout") {
     document.getElementById("logout-form")?.submit();
+    return;
+  }
+  if (action === "device-notifications") {
+    await requestDeviceNotifications();
+    return;
+  }
+  if (action === "toggle-theme") {
+    toggleTheme();
+    return;
+  }
+  if (action === "wizard-next") {
+    moveWizard(1);
+    return;
+  }
+  if (action === "wizard-back") {
+    moveWizard(-1);
     return;
   }
   if (action === "select-project") {
@@ -2396,6 +2595,9 @@ async function onClick(event) {
   if (action === "mark-ready") markReadyForReview(target.dataset.id);
   if (action === "advance-stage") advanceStage(target.dataset.id);
   if (action === "request-task-revision") requestTaskRevision(target.dataset.id);
+  if (action === "new-qc-remark") openQcRemarkModal("", target.dataset.video || "");
+  if (action === "edit-qc-remark") openQcRemarkModal(target.dataset.id);
+  if (action === "qc-status") updateQcStatus(target.dataset.id, target.dataset.status);
   if (action === "new-approval") openApprovalModal();
   if (action === "approval-decision") updateApproval(target.dataset.id, target.dataset.decision);
   if (action === "new-asset") openAssetModal();
@@ -2419,7 +2621,10 @@ async function onSubmit(event) {
   const form = event.target.closest("form[data-form]");
   if (!form) return;
   event.preventDefault();
-  const data = Object.fromEntries(new FormData(form).entries());
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData.entries());
+  data.assignedTeamMembers = formData.getAll("assignedTeamMembers");
+  data.accessMembers = formData.getAll("accessMembers");
   const formName = form.dataset.form;
   if (formName === "asset") {
     try {
@@ -2432,6 +2637,7 @@ async function onSubmit(event) {
   if (formName === "project") saveProject(data);
   if (formName === "task") saveTask(data);
   if (formName === "progress") saveProgress(data);
+  if (formName === "qc-remark") saveQcRemark(data);
   if (formName === "approval") saveApproval(data);
   if (formName === "comment") saveComment(data);
   if (formName === "booking") saveBooking(data);
@@ -2472,6 +2678,10 @@ function onChange(event) {
     if (setting.dataset.setting === "security") {
       state.settings.security[setting.dataset.key] = setting.checked;
     }
+    if (setting.dataset.setting === "theme") {
+      state.settings.theme = setting.checked ? "dark" : "light";
+      applyTheme();
+    }
     appendAudit("Settings", `${setting.dataset.key} set to ${setting.checked ? "on" : "off"}`);
     saveState();
     render();
@@ -2496,6 +2706,7 @@ function onInput(event) {
 
 function openProjectModal(id) {
   const existing = state.projects.find((project) => project.id === id);
+  const users = userChoices();
   const project = existing || {
     id: "",
     name: "",
@@ -2503,7 +2714,7 @@ function openProjectModal(id) {
     client: "",
     department: departments[0],
     campaign: "",
-    type: "Video",
+    type: projectTypes[0],
     priority: "Medium",
     status: "Planning",
     description: "",
@@ -2530,23 +2741,120 @@ function openProjectModal(id) {
     nasFolder: "",
     accessMembers: []
   };
+
+  const commonFields = `
+    <input type="hidden" name="id" value="${escapeAttr(project.id)}">
+    <input type="hidden" name="department" value="Creative Operations">
+  `;
+
+  if (!existing) {
+    openModal("New Project", `
+      <form data-form="project" class="project-wizard" data-wizard-current="0">
+        ${commonFields}
+        <div class="wizard-progress" aria-label="Project creation steps">
+          <span class="active">Basics</span>
+          <span>Team</span>
+          <span>Brief</span>
+          <span>Storage</span>
+        </div>
+
+        <section class="wizard-step active" data-step="0">
+          <div class="step-header">
+            <h3>Project basics</h3>
+            <p>Start with the request, client, and content type.</p>
+          </div>
+          <div class="form-grid">
+            ${formField("Project Name", "name", project.name, "text", true)}
+            ${formField("Project Code", "code", project.code, "text", true)}
+            ${formField("Client", "client", project.client, "text", true)}
+            <div class="form-field">
+              <label>Owner Team</label>
+              <input value="Creative Operations" disabled>
+            </div>
+            ${formField("Campaign", "campaign", project.campaign)}
+            ${selectField("Project Type", "type", projectTypes, project.type)}
+            ${selectField("Priority", "priority", ["High", "Medium", "Low"], project.priority)}
+            ${selectField("Status", "status", ["Planning", "In Progress", "Waiting Approval", "At Risk", "Completed", "Cancelled"], project.status)}
+            ${formField("Platform", "platform", project.platform)}
+            ${formField("Budget", "budget", project.budget, "number")}
+          </div>
+        </section>
+
+        <section class="wizard-step" data-step="1">
+          <div class="step-header">
+            <h3>Team and template</h3>
+            <p>Pick the staff involved, then let the system create the usual production tasks.</p>
+          </div>
+          <div class="form-grid">
+            ${selectField("Project Owner", "assignedManager", users, project.assignedManager)}
+            ${selectField("Workflow Template", "workflowTemplate", workflowTemplates, defaultWorkflowTemplate(project.type))}
+            ${multiSelectField("Assigned Staff", "assignedTeamMembers", users, safeList(project.assignedTeamMembers))}
+            ${multiSelectField("View Access", "accessMembers", users, accessList(project))}
+            ${roleAssignmentFields(users)}
+          </div>
+        </section>
+
+        <section class="wizard-step" data-step="2">
+          <div class="step-header">
+            <h3>Schedule and brief</h3>
+            <p>Give editors enough context to start without hunting through messages.</p>
+          </div>
+          <div class="form-grid">
+            ${formField("Start Date", "startDate", project.startDate, "date")}
+            ${formField("Deadline", "deadline", project.deadline, "date")}
+            ${formField("Expected Completion", "expectedCompletion", project.expectedCompletion, "date")}
+            ${formField("Estimated Hours", "estimatedHours", project.estimatedHours, "number")}
+            ${textField("Description", "description", project.description)}
+            ${textField("Objectives", "objectives", project.objectives)}
+            ${textField("Target Audience", "targetAudience", project.targetAudience)}
+          </div>
+        </section>
+
+        <section class="wizard-step" data-step="3">
+          <div class="step-header">
+            <h3>Storage and handoff</h3>
+            <p>Finish with deliverables, notes, and the NAS handoff details.</p>
+          </div>
+          <div class="form-grid">
+            ${formField("Deliverables", "deliverables", safeList(project.deliverables).join(", "))}
+            ${formField("Tags", "tags", safeList(project.tags).join(", "))}
+            ${textField("Internal Notes", "internalNotes", project.internalNotes)}
+            ${textField("Client Notes", "clientNotes", project.clientNotes)}
+            <div class="handoff-note wide">
+              <strong>Next after create</strong>
+              <span>Create the project folders, upload or link raw footage on the NAS, then editors work through the auto-generated tasks.</span>
+            </div>
+          </div>
+        </section>
+
+        ${projectWizardFooter()}
+      </form>
+    `);
+    return;
+  }
+
   openModal(existing ? "Edit Project" : "New Project", `
     <form data-form="project">
-      <input type="hidden" name="id" value="${escapeAttr(project.id)}">
+      ${commonFields}
       <div class="form-grid">
         ${formField("Project Name", "name", project.name, "text", true)}
         ${formField("Project Code", "code", project.code, "text", true)}
         ${formField("Client", "client", project.client, "text", true)}
-        ${selectField("Department", "department", departments, project.department)}
+        <div class="form-field">
+          <label>Owner Team</label>
+          <input value="Creative Operations" disabled>
+        </div>
         ${formField("Campaign", "campaign", project.campaign)}
-        ${selectField("Project Type", "type", ["Video", "Design", "Motion Graphics", "Photography", "Social Media", "Copywriting", "Marketing", "Podcast", "Freelancer"], project.type)}
+        ${selectField("Project Type", "type", projectTypes, project.type)}
+        ${existing ? "" : selectField("Workflow Template", "workflowTemplate", workflowTemplates, defaultWorkflowTemplate(project.type))}
         ${selectField("Priority", "priority", ["High", "Medium", "Low"], project.priority)}
         ${selectField("Status", "status", ["Planning", "In Progress", "Waiting Approval", "At Risk", "Completed", "Cancelled"], project.status)}
         ${formField("Platform", "platform", project.platform)}
         ${formField("Budget", "budget", project.budget, "number")}
-        ${formField("Assigned Manager", "assignedManager", project.assignedManager)}
-        ${formField("Team Members", "assignedTeamMembers", project.assignedTeamMembers.join(", "))}
-        ${formField("Access Members", "accessMembers", accessList(project).join(", "))}
+        ${selectField("Project Owner", "assignedManager", users, project.assignedManager)}
+        ${multiSelectField("Assigned Staff", "assignedTeamMembers", users, safeList(project.assignedTeamMembers))}
+        ${multiSelectField("View Access", "accessMembers", users, accessList(project))}
+        ${existing ? "" : roleAssignmentFields(users)}
         ${formField("Start Date", "startDate", project.startDate, "date")}
         ${formField("Deadline", "deadline", project.deadline, "date")}
         ${formField("Expected Completion", "expectedCompletion", project.expectedCompletion, "date")}
@@ -2556,12 +2864,58 @@ function openProjectModal(id) {
         ${textField("Target Audience", "targetAudience", project.targetAudience)}
         ${textField("Internal Notes", "internalNotes", project.internalNotes)}
         ${textField("Client Notes", "clientNotes", project.clientNotes)}
-        ${formField("Tags", "tags", project.tags.join(", "))}
-        ${formField("Deliverables", "deliverables", project.deliverables.join(", "))}
+        ${formField("Tags", "tags", safeList(project.tags).join(", "))}
+        ${formField("Deliverables", "deliverables", safeList(project.deliverables).join(", "))}
       </div>
       ${modalFooter()}
     </form>
   `);
+}
+
+function defaultWorkflowTemplate(projectType) {
+  if (projectType === "Short-form Video") return "short-form";
+  if (projectType === "Podcast / Long-form Video") return "podcast";
+  if (projectType === "Publishing Package") return "publishing-only";
+  return "standard-video";
+}
+
+function roleAssignmentFields(users) {
+  const choices = [["", "Select staff"], ...users];
+  const defaults = defaultRoleAssignments();
+  return `
+    <div class="form-field wide">
+      <label>Auto Task Roles</label>
+      <div class="role-grid">
+        ${selectField("Scriptwriter", "roleScriptwriter", choices, defaults.scriptwriter)}
+        ${selectField("Producer / Raw Ready", "roleProducer", choices, defaults.producer)}
+        ${selectField("Editor", "roleEditor", choices, defaults.editor)}
+        ${selectField("Audio / Sound", "roleAudio", choices, defaults.audio)}
+        ${selectField("Designer / Motion", "roleDesigner", choices, defaults.designer)}
+        ${selectField("QC", "roleQc", choices, defaults.qc)}
+        ${selectField("Final Verifier", "roleVerifier", choices, defaults.verifier)}
+        ${selectField("Approver", "roleApprover", choices, defaults.approver)}
+        ${selectField("Publisher", "rolePublisher", choices, defaults.publisher)}
+      </div>
+    </div>
+  `;
+}
+
+function defaultRoleAssignments() {
+  const byRole = (terms) => safeList(state.team).find((personItem) => {
+    const profile = `${personItem.role || ""} ${personItem.title || ""} ${safeList(personItem.skills).join(" ")}`.toLowerCase();
+    return terms.some((term) => profile.includes(String(term).toLowerCase()));
+  })?.name || "";
+  return {
+    scriptwriter: byRole(["script", "copy"]),
+    producer: byRole(["producer", "production", "coordinator", "raw readiness"]),
+    editor: byRole(["video editor", "editing"]),
+    audio: byRole(["audio", "sound", "mix"]),
+    designer: byRole(["designer", "design", "motion"]),
+    qc: byRole(["qc", "quality"]),
+    verifier: byRole(["verifier", "final verifier", "manager"]),
+    approver: byRole(["approver", "manager", "admin"]),
+    publisher: byRole(["publisher", "publishing", "coordinator"])
+  };
 }
 
 function openTaskModal(id, projectId = "") {
@@ -2642,6 +2996,51 @@ function openProgressModal(id) {
   `);
 }
 
+function openQcRemarkModal(id = "", videoId = "") {
+  const existing = state.qcRemarks.find((remark) => remark.id === id);
+  const selectedVideo = (state.videos || []).find((video) => video.id === (existing?.videoId || videoId)) || state.videos?.[0];
+  const remark = existing || {
+    id: "",
+    projectId: selectedVideo?.projectId || state.projects[0]?.id || "",
+    videoId: selectedVideo?.id || "",
+    versionId: "",
+    createdBy: state.ui.currentUser || AUTH_USER?.name || "Current User",
+    category: "Visual",
+    severity: "Minor",
+    timecode: "00:00",
+    instruction: "",
+    assignedTo: selectedVideo?.editor || "",
+    status: "Open",
+    decision: "Revision required",
+    resolutionVersion: "",
+    repeated: false,
+    createdAt: toISO(new Date())
+  };
+
+  openModal(existing ? "Edit QC Remark" : "New QC Remark", `
+    <form data-form="qc-remark">
+      <input type="hidden" name="id" value="${escapeAttr(remark.id)}">
+      <input type="hidden" name="createdAt" value="${escapeAttr(remark.createdAt)}">
+      <div class="form-grid">
+        ${selectField("Video", "videoId", (state.videos || []).map((video) => [video.id, `${video.id} - ${video.title}`]), remark.videoId)}
+        ${selectField("Category", "category", ["Script", "Fact", "Subtitle", "Audio", "Visual", "Branding", "Format", "Compliance"], remark.category)}
+        ${selectField("Severity", "severity", ["Minor", "Moderate", "Major", "Critical"], remark.severity)}
+        ${selectField("Status", "status", ["Open", "Acknowledged", "In Progress", "Resolved", "Closed", "Reopened"], remark.status)}
+        ${selectField("Decision", "decision", ["Pass", "Pass with minor correction", "Revision required", "Major revision", "Rejected", "Escalated"], remark.decision || "Revision required")}
+        ${formField("Timecode", "timecode", remark.timecode || "00:00", "text", true)}
+        ${formField("Assigned To", "assignedTo", remark.assignedTo || "", "text", true)}
+        ${formField("Resolution Version", "resolutionVersion", remark.resolutionVersion || "", "text")}
+        <label class="switch-row wide">
+          <span>Repeated issue</span>
+          <input type="checkbox" name="repeated" value="1" ${remark.repeated ? "checked" : ""}>
+        </label>
+        ${textField("Instruction", "instruction", remark.instruction || "")}
+      </div>
+      ${modalFooter()}
+    </form>
+  `);
+}
+
 function openApprovalModal() {
   openModal("New Approval", `
     <form data-form="approval">
@@ -2660,27 +3059,19 @@ function openApprovalModal() {
 }
 
 function openAssetModal() {
-  openModal("Upload Asset", `
+  openModal("Register Server Link", `
     <form data-form="asset">
       <div class="form-grid">
         ${selectField("Project", "projectId", state.projects.map((project) => [project.id, `${project.code} - ${project.name}`]), state.ui.selectedProjectId || state.projects[0]?.id)}
-        ${formField("Asset Name", "name", "", "text", false)}
+        ${formField("Reference Name", "name", "", "text", false)}
         ${formField("Original Filename", "originalFilename", "", "text", false)}
-        ${formField("NAS Relative Path", "storagePath", "raw/project-code/file.mov", "text", false)}
+        ${formField("NAS / Server Path", "storagePath", "\\\\CREATIVE-SERVER\\Client\\Project\\RAW\\file.mov", "text", false)}
         ${formField("File Size GB", "fileSizeGb", "", "number")}
-        <div class="form-field wide">
-          <label for="asset-file">Upload From This Computer</label>
-          <input id="asset-file" name="file" type="file" accept=".psd,.ai,.indd,.fig,.prproj,.aep,.drp,.pdf,.docx,.png,.jpg,.jpeg,.mp4,.mov,.mxf,.braw,.r3d">
-        </div>
-        ${selectField("Category", "category", ["Video", "Image", "Raw Footage", "Logo", "Brand Asset", "Template", "Music", "Sound Effect", "Font", "Animation", "Motion Graphics", "Project File", "Final Deliverable", "Brief"], "Project File")}
+        ${selectField("Reference Type", "category", ["Raw Footage", "Audio", "Project File", "Preview Export", "Final Deliverable", "Script", "Source Document", "Brief", "Thumbnail", "Caption Package"], "Project File")}
         ${selectField("Status", "status", ["Pending", "Approved", "Revision Required", "Waiting Approval"], "Pending")}
-        ${selectField("Upload Status", "uploadStatus", ["metadata_only", "on_nas", "missing", "needs_verify"], "on_nas")}
-        ${selectField("Processing Status", "processingStatus", ["not_started", "proxy_needed", "proxy_ready", "editing", "review_ready", "final_ready"], "not_started")}
+        ${selectField("Server Status", "uploadStatus", ["metadata_only", "on_nas", "missing", "needs_verify"], "on_nas")}
+        ${selectField("Processing Status", "processingStatus", ["not_started", "proxy_needed", "proxy_processing", "proxy_ready", "proxy_failed", "editing", "review_ready", "final_ready"], "not_started")}
         ${formField("Tags", "tags", "")}
-      </div>
-      <div class="upload-progress" data-upload-progress hidden>
-        <div class="progress"><span style="--value:0%"></span></div>
-        <div class="small muted" data-upload-label>Waiting to upload</div>
       </div>
       ${modalFooter()}
     </form>
@@ -2718,7 +3109,7 @@ function openAssetPreview(id) {
         ${detail("NAS Path", asset.storagePath || "Not linked")}
         ${detail("Proxy Path", asset.proxyPath || "Not queued")}
         ${detail("Preview Path", asset.previewPath || "Not available")}
-        ${detail("Upload", statusLabel(asset.uploadStatus))}
+        ${detail("Server Status", statusLabel(asset.uploadStatus))}
         ${detail("Processing", statusLabel(asset.processingStatus))}
         ${detail("Size", formatBytes(asset.fileSize))}
         ${detail("Versions", versions.length)}
@@ -2758,6 +3149,8 @@ function openUserModal() {
     <form data-form="user">
       <div class="form-grid">
         ${formField("Name", "name", "", "text", true)}
+        ${formField("Email", "email", "", "email", true)}
+        ${formField("Temporary Password", "password", "password", "text", true)}
         ${formField("Title", "title", "", "text", true)}
         ${selectField("Department", "department", departments, departments[0])}
         ${selectField("Role", "role", ["Director", "Creative Manager", "Project Manager", "Coordinator", "Scriptwriter", "Script Checker", "Researcher", "Verifier", "Video Editor", "Graphic Designer", "QC", "Final Verifier", "Approver", "Publisher", "Admin", "Manager", "Member", "Freelancer", "Limited", "Client"], "Member")}
@@ -2801,8 +3194,40 @@ function closeModal() {
   document.getElementById("modal-root").innerHTML = "";
 }
 
+function moveWizard(direction) {
+  const form = document.querySelector(".project-wizard");
+  if (!form) return;
+
+  const steps = [...form.querySelectorAll(".wizard-step")];
+  if (!steps.length) return;
+
+  const current = Number(form.dataset.wizardCurrent || 0);
+  const next = clamp(current + direction, 0, steps.length - 1);
+  form.dataset.wizardCurrent = String(next);
+
+  steps.forEach((step, index) => {
+    step.classList.toggle("active", index === next);
+  });
+
+  form.querySelectorAll(".wizard-progress span").forEach((item, index) => {
+    item.classList.toggle("active", index === next);
+    item.classList.toggle("done", index < next);
+  });
+
+  const backButton = form.querySelector("[data-action='wizard-back']");
+  const nextButton = form.querySelector("[data-action='wizard-next']");
+  const submitButton = form.querySelector("[data-wizard-submit]");
+  if (backButton) backButton.disabled = next === 0;
+  if (nextButton) nextButton.hidden = next === steps.length - 1;
+  if (submitButton) submitButton.hidden = next !== steps.length - 1;
+}
+
 function saveProject(data) {
   const id = data.id || makeId("p");
+  const roles = projectRoleAssignments(data);
+  const assignedManager = data.assignedManager.trim();
+  const assignedTeamMembers = uniqueList([...listFromField(data.assignedTeamMembers), ...Object.values(roles)]);
+  const accessMembers = listFromField(data.accessMembers);
   const project = {
     id,
     name: data.name.trim(),
@@ -2818,8 +3243,8 @@ function saveProject(data) {
     targetAudience: data.targetAudience.trim(),
     platform: data.platform.trim(),
     budget: Number(data.budget || 0),
-    assignedManager: data.assignedManager.trim(),
-    assignedTeamMembers: splitList(data.assignedTeamMembers),
+    assignedManager,
+    assignedTeamMembers,
     internalNotes: data.internalNotes.trim(),
     clientNotes: data.clientNotes.trim(),
     startDate: data.startDate,
@@ -2835,7 +3260,7 @@ function saveProject(data) {
     deliverables: splitList(data.deliverables),
     creativeBrief: brief({ businessObjectives: data.objectives, targetAudience: data.targetAudience }),
     nasFolder: "",
-    accessMembers: splitList(data.accessMembers).length ? splitList(data.accessMembers) : splitList(data.assignedTeamMembers)
+    accessMembers: accessMembers.length ? uniqueList([...accessMembers, ...assignedTeamMembers, assignedManager]) : uniqueList([...assignedTeamMembers, assignedManager])
   };
   const index = state.projects.findIndex((item) => item.id === id);
   if (index >= 0) {
@@ -2851,10 +3276,67 @@ function saveProject(data) {
     appendAudit("Project updated", `${project.code} ${project.name}`);
   } else {
     state.projects.unshift(project);
+    createTasksFromTemplate(project, data.workflowTemplate, roles);
     state.ui.selectedProjectId = id;
     recordActivity(id, "project_created", `${project.code} created`, "project", id);
     appendAudit("Project created", `${project.code} ${project.name}`);
   }
+}
+
+function projectRoleAssignments(data) {
+  const owner = data.assignedManager?.trim() || "";
+  return {
+    owner,
+    scriptwriter: data.roleScriptwriter || owner,
+    producer: data.roleProducer || owner,
+    editor: data.roleEditor || owner,
+    audio: data.roleAudio || data.roleEditor || owner,
+    designer: data.roleDesigner || data.roleEditor || owner,
+    qc: data.roleQc || owner,
+    verifier: data.roleVerifier || data.roleQc || owner,
+    approver: data.roleApprover || owner,
+    publisher: data.rolePublisher || owner,
+    checker: data.roleVerifier || data.roleQc || owner
+  };
+}
+
+function createTasksFromTemplate(project, templateId, roles) {
+  const template = workflowTaskTemplates[templateId || "none"] || [];
+  if (!template.length) return;
+
+  const start = new Date(project.startDate || toISO(new Date()));
+  const tasks = template.map((item, index) => {
+    const assignee = roles[item.role] || roles.owner || project.assignedManager || "";
+    const reviewer = roles[item.reviewer] || roles.owner || project.assignedManager || "";
+    return {
+      id: makeId("t"),
+      projectId: project.id,
+      name: item.name,
+      description: `${item.name} for ${project.code}.`,
+      priority: project.priority,
+      assignee,
+      reviewer,
+      dueDate: dateFrom(start, item.dueOffset),
+      startDate: dateFrom(start, Math.max(0, item.dueOffset - 2)),
+      completionDate: "",
+      estimatedHours: item.hours,
+      actualHours: 0,
+      checklist: [],
+      attachments: [],
+      comments: [],
+      dependencies: index ? [template[index - 1].name] : [],
+      revisionCount: 0,
+      status: index === 0 ? "In Progress" : "Pending",
+      stage: item.stage,
+      progressPercent: 0,
+      lastProgressNote: "",
+      lastProgressAt: ""
+    };
+  });
+
+  state.tasks.unshift(...tasks);
+  recordActivity(project.id, "tasks_generated", `${tasks.length} tasks generated from workflow template`, "project", project.id);
+  appendAudit("Template tasks created", `${project.code}: ${tasks.length} tasks`);
 }
 
 function saveTask(data) {
@@ -2915,6 +3397,57 @@ function saveProgress(data) {
   });
   appendAudit("Progress updated", `${taskItem.name}: ${previousProgress}% to ${taskItem.progressPercent}%`);
   createProgressNotification(taskItem);
+}
+
+function saveQcRemark(data) {
+  const video = (state.videos || []).find((item) => item.id === data.videoId);
+  if (!video) return;
+
+  const id = data.id || `RMK-${video.id}-${String(Date.now()).slice(-4)}`;
+  const existing = state.qcRemarks.find((remark) => remark.id === id);
+  const remark = {
+    id,
+    projectId: video.projectId,
+    videoId: video.id,
+    versionId: existing?.versionId || data.versionId || "",
+    createdBy: existing?.createdBy || state.ui.currentUser || AUTH_USER?.name || "Current User",
+    category: data.category,
+    severity: data.severity,
+    timecode: normalizeTimecode(data.timecode),
+    instruction: data.instruction.trim(),
+    assignedTo: data.assignedTo.trim(),
+    status: data.status,
+    decision: data.decision,
+    resolutionVersion: data.resolutionVersion.trim(),
+    repeated: data.repeated === "1",
+    createdAt: data.createdAt || existing?.createdAt || toISO(new Date())
+  };
+
+  if (!remark.instruction) return;
+
+  const index = state.qcRemarks.findIndex((item) => item.id === id);
+  if (index >= 0) {
+    state.qcRemarks[index] = remark;
+    recordActivity(remark.projectId, "qc_updated", `${remark.id} updated at ${remark.timecode}`, "qc", remark.id);
+    appendAudit("QC updated", `${remark.id}: ${remark.status}`);
+  } else {
+    state.qcRemarks.unshift(remark);
+    video.revisionCount = Number(video.revisionCount || 0) + 1;
+    if (["Major", "Critical"].includes(remark.severity)) {
+      video.redFlag = remark.severity === "Critical" ? "Critical" : "Red";
+      video.blocker = remark.instruction;
+    }
+    recordActivity(remark.projectId, "qc_created", `${remark.category} remark added at ${remark.timecode}`, "qc", remark.id);
+    appendAudit("QC remark created", `${remark.id}: ${remark.assignedTo}`);
+  }
+
+  addNotification({
+    user: remark.assignedTo,
+    type: "qc",
+    title: "QC remark assigned",
+    message: `${video.title}: ${remark.category} issue at ${remark.timecode}.`,
+    linkView: "qc"
+  });
 }
 
 function saveApproval(data) {
@@ -3038,6 +3571,7 @@ function saveBooking(data) {
   item.currentUser = data.currentUser.trim();
   item.availability = data.availability;
   item.returnDate = data.returnDate;
+  item.bookingHistory = item.bookingHistory || [];
   item.bookingHistory.unshift({
     user: item.currentUser,
     bookedAt: toISO(new Date()),
@@ -3050,6 +3584,8 @@ function saveUser(data) {
   state.team.push({
     id: makeId("u"),
     name: data.name.trim(),
+    email: data.email.trim(),
+    password: data.password || "password",
     title: data.title.trim(),
     department: data.department,
     role: data.role,
@@ -3213,6 +3749,48 @@ function requestTaskRevision(id) {
   render();
 }
 
+function toggleTheme() {
+  state.settings.theme = state.settings.theme === "dark" ? "light" : "dark";
+  applyTheme();
+  appendAudit("Appearance", `${state.settings.theme} mode enabled`);
+  saveState();
+  render();
+}
+
+function updateQcStatus(id, status) {
+  const remark = (state.qcRemarks || []).find((item) => item.id === id);
+  if (!remark) return;
+
+  const previous = remark.status;
+  remark.status = status;
+  if (status === "Resolved" && !remark.resolutionVersion) {
+    const asset = state.assets.find((assetItem) => assetItem.projectId === remark.projectId);
+    remark.resolutionVersion = asset ? `v${asset.version || 1}` : "Current cut";
+  }
+
+  const video = (state.videos || []).find((item) => item.id === remark.videoId);
+  if (video && status === "Resolved") {
+    const open = remarksForVideo(video.id).filter((item) => !["Resolved", "Closed"].includes(item.status)).length;
+    video.qcScore = clamp(Number(video.qcScore || 0) + (open <= 1 ? 8 : 3), 0, 100);
+    if (open <= 1 && ["Red", "Critical"].includes(video.redFlag)) {
+      video.redFlag = "Amber";
+      video.blocker = "QC fixes awaiting final verification";
+    }
+  }
+
+  recordActivity(remark.projectId, "qc_status", `${remark.id} moved from ${previous} to ${status}`, "qc", remark.id);
+  appendAudit("QC status", `${remark.id}: ${status}`);
+  addNotification({
+    user: status === "Resolved" ? remark.createdBy : remark.assignedTo,
+    type: "qc",
+    title: `QC ${status.toLowerCase()}`,
+    message: `${remark.id} at ${remark.timecode || "no timecode"} is now ${status}.`,
+    linkView: "qc"
+  });
+  saveState();
+  render();
+}
+
 function quickProgress(id, progress) {
   const item = state.tasks.find((taskItem) => taskItem.id === id);
   if (!item) return;
@@ -3256,6 +3834,26 @@ function markNotificationRead(id) {
   render();
 }
 
+async function requestDeviceNotifications() {
+  if (!("Notification" in window)) {
+    window.alert("This browser does not support device notifications.");
+    return;
+  }
+
+  const permission = await Notification.requestPermission();
+  state.ui.deviceNotifications = permission === "granted";
+  appendAudit("Device alerts", permission === "granted" ? "Enabled" : "Not enabled");
+  saveState();
+  render();
+
+  if (permission === "granted") {
+    sendDeviceNotification({
+      title: "FF Creative Hub alerts enabled",
+      message: "You will see workflow alerts from this browser session."
+    });
+  }
+}
+
 function createProgressNotification(taskItem) {
   const project = projectById(taskItem.projectId);
   const manager = project?.assignedManager || taskItem.reviewer || "Admin";
@@ -3270,11 +3868,29 @@ function createProgressNotification(taskItem) {
 
 function addNotification(notification) {
   state.notifications = state.notifications || [];
-  state.notifications.unshift({
+  const item = {
     id: makeId("nt"),
     read: false,
     createdAt: toISO(new Date()),
     ...notification
+  };
+  state.notifications.unshift(item);
+  sendDeviceNotification(item);
+}
+
+function sendDeviceNotification(item) {
+  if (!state.ui.deviceNotifications || !("Notification" in window) || Notification.permission !== "granted") return;
+  const user = state.ui.currentUser || AUTH_USER?.name || "";
+  if (item.user && item.user !== user && item.user !== "Admin") return;
+
+  const now = Date.now();
+  if (now - lastDeviceNotificationAt < 1000) return;
+  lastDeviceNotificationAt = now;
+
+  new Notification(item.title || "FF Creative Hub", {
+    body: item.message || "There is a workflow update.",
+    tag: item.id || item.type || "creative-hub",
+    silent: false
   });
 }
 
@@ -3282,7 +3898,8 @@ function updateApproval(id, decision) {
   const item = state.approvals.find((approvalItem) => approvalItem.id === id);
   if (!item) return;
   item.status = decision;
-  item.comments.push({ by: "Current User", at: toISO(new Date()), text: decision });
+  item.comments = item.comments || [];
+  item.comments.push({ by: state.ui.currentUser || "Current User", at: toISO(new Date()), text: decision });
   if (decision === "Revision Requested") {
     state.tasks
       .filter((taskItem) => taskItem.projectId === item.projectId)
@@ -3326,7 +3943,8 @@ function bumpAssetVersion(id) {
 function downloadAsset(id) {
   const item = state.assets.find((assetItem) => assetItem.id === id);
   if (!item) return;
-  item.downloads += 1;
+  item.downloads = Number(item.downloads || 0) + 1;
+  item.usageHistory = item.usageHistory || [];
   item.usageHistory.push({ at: toISO(new Date()), by: state.ui.currentUser || "Current User" });
   if (item.storagePath && navigator.clipboard) {
     navigator.clipboard.writeText(item.storagePath).catch(() => {});
@@ -3370,7 +3988,8 @@ function exportReport(format) {
     ["Overdue Projects", metrics().overdueProjects],
     ["Pending Approvals", metrics().pendingApprovals],
     ["Revision Requests", metrics().revisionRequests],
-    ["Equipment In Use", metrics().equipmentInUse]
+    ["Server Links", metrics().serverLinks],
+    ["Proxy Queue", metrics().proxyQueue]
   ];
   if (format === "pdf") {
     window.print();
@@ -3396,8 +4015,8 @@ function downloadFile(name, type, content) {
 }
 
 function filteredProjects() {
-  const term = state.ui.projectSearch.trim().toLowerCase();
-  return state.projects.filter((project) => {
+  const term = String(state.ui.projectSearch || "").trim().toLowerCase();
+  return safeList(state.projects).filter((project) => {
     const matchesTerm = !term || [
       project.name,
       project.code,
@@ -3408,7 +4027,7 @@ function filteredProjects() {
       project.priority,
       project.status,
       project.workflowStage,
-      ...project.tags
+      ...safeList(project.tags)
     ].join(" ").toLowerCase().includes(term);
     const matchesStatus = state.ui.projectStatus === "All" || project.status === state.ui.projectStatus;
     const matchesDepartment = state.ui.projectDepartment === "All" || project.department === state.ui.projectDepartment;
@@ -3417,8 +4036,8 @@ function filteredProjects() {
 }
 
 function filteredTasks() {
-  const term = state.ui.taskSearch.trim().toLowerCase();
-  return state.tasks.filter((taskItem) => {
+  const term = String(state.ui.taskSearch || "").trim().toLowerCase();
+  return safeList(state.tasks).filter((taskItem) => {
     const project = projectById(taskItem.projectId);
     const matchesTerm = !term || [
       taskItem.name,
@@ -3435,7 +4054,7 @@ function filteredTasks() {
 }
 
 function getSelectedProject(projects) {
-  const current = state.projects.find((project) => project.id === state.ui.selectedProjectId);
+  const current = safeList(state.projects).find((project) => project.id === state.ui.selectedProjectId);
   if (current && projects.some((project) => project.id === current.id)) return current;
   return projects[0] || null;
 }
@@ -3452,9 +4071,9 @@ function metrics() {
   const revisionRequests = state.tasks.filter((item) => item.status === "Revision Required").length + state.approvals.filter((item) => item.status === "Revision Requested").length;
   const publishedContent = state.assets.filter((item) => item.category === "Final Deliverable" || item.status === "Approved").length;
   const clientWaiting = state.approvals.filter((item) => item.level === "Client" && item.status === "Pending").length;
-  const equipmentInUse = state.equipment.filter((item) => ["In Use", "Booked"].includes(item.availability)).length;
+  const serverLinks = state.assets.filter((item) => item.storagePath).length;
+  const proxyQueue = state.assets.filter((item) => ["proxy_needed", "proxy_processing"].includes(item.processingStatus)).length;
   const avgWorkload = Math.round(state.team.reduce((sum, item) => sum + item.utilization, 0) / Math.max(state.team.length, 1));
-  const resourceUtilization = Math.round((equipmentInUse / Math.max(state.equipment.length, 1)) * 100);
   const inProduction = state.projects.filter((project) => {
     const index = workflowStages.indexOf(project.workflowStage);
     return index >= 6 && index <= 12;
@@ -3469,9 +4088,9 @@ function metrics() {
     revisionRequests,
     publishedContent,
     clientWaiting,
-    equipmentInUse,
+    serverLinks,
+    proxyQueue,
     avgWorkload,
-    resourceUtilization,
     inProduction
   };
 }
@@ -3641,7 +4260,7 @@ function miniList(title, items) {
     <div class="card">
       <h3>${escapeHtml(title)}</h3>
       <div class="list" style="margin-top:10px">
-        ${(items || []).map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("") || `<span class="muted small">None</span>`}
+        ${safeList(items).map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("") || `<span class="muted small">None</span>`}
       </div>
     </div>
   `;
@@ -3665,6 +4284,15 @@ function detail(label, value) {
       <span>${escapeHtml(label)}</span>
       <div>${escapeHtml(String(value || "TBD"))}</div>
     </div>
+  `;
+}
+
+function disclosure(title, body, open = false) {
+  return `
+    <details class="disclosure" ${open ? "open" : ""}>
+      <summary>${escapeHtml(title)}</summary>
+      <div class="disclosure-body">${body}</div>
+    </details>
   `;
 }
 
@@ -3735,6 +4363,21 @@ function options(items, selected) {
   }).join("");
 }
 
+function multiOptions(items, selectedItems = []) {
+  const selected = new Set(safeList(selectedItems).map(String));
+  return items.map((item) => {
+    const value = Array.isArray(item) ? item[0] : item;
+    const label = Array.isArray(item) ? item[1] : item;
+    return `<option value="${escapeAttr(value)}" ${selected.has(String(value)) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+}
+
+function userChoices() {
+  return safeList(state.team)
+    .filter((personItem) => !["Client"].includes(personItem.role))
+    .map((personItem) => [personItem.name, `${personItem.name} - ${personItem.role || "Staff"}`]);
+}
+
 function formField(label, name, value = "", type = "text", required = false) {
   const id = `${name}-${Math.random().toString(16).slice(2)}`;
   return `
@@ -3765,6 +4408,36 @@ function selectField(label, name, choices, selected) {
   `;
 }
 
+function multiSelectField(label, name, choices, selected = []) {
+  const id = `${name}-${Math.random().toString(16).slice(2)}`;
+  const selectedSet = new Set(safeList(selected).map(String));
+  const selectedLabels = choices
+    .filter((item) => selectedSet.has(String(Array.isArray(item) ? item[0] : item)))
+    .map((item) => Array.isArray(item) ? item[1] : item);
+  const summary = selectedLabels.length ? `${selectedLabels.length} selected` : "Select staff";
+  return `
+    <div class="form-field checkbox-select-field">
+      <label id="${id}-label">${escapeHtml(label)}</label>
+      <details class="checkbox-select">
+        <summary aria-labelledby="${id}-label">${escapeHtml(summary)}</summary>
+        <div class="checkbox-select-menu">
+          ${choices.map((item, index) => {
+            const value = Array.isArray(item) ? item[0] : item;
+            const optionLabel = Array.isArray(item) ? item[1] : item;
+            const optionId = `${id}-${index}`;
+            return `
+              <label class="checkbox-option" for="${optionId}">
+                <input id="${optionId}" type="checkbox" name="${escapeAttr(name)}" value="${escapeAttr(value)}" ${selectedSet.has(String(value)) ? "checked" : ""}>
+                <span>${escapeHtml(optionLabel)}</span>
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </details>
+    </div>
+  `;
+}
+
 function modalFooter() {
   return `
     <div class="modal-footer">
@@ -3774,12 +4447,29 @@ function modalFooter() {
   `;
 }
 
+function projectWizardFooter() {
+  return `
+    <div class="modal-footer wizard-footer">
+      <button type="button" class="button" data-action="wizard-back" disabled>Back</button>
+      <div class="wizard-actions">
+        <button type="button" class="button" data-action="close-modal">Cancel</button>
+        <button type="button" class="button primary" data-action="wizard-next">Next</button>
+        <button type="submit" class="button primary" data-wizard-submit hidden>Create Project</button>
+      </div>
+    </div>
+  `;
+}
+
 function empty(text) {
   return `<div class="empty">${escapeHtml(text)}</div>`;
 }
 
 function projectById(id) {
-  return state.projects.find((project) => project.id === id);
+  return safeList(state.projects).find((project) => project.id === id);
+}
+
+function safeList(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function projectProgress(project) {
@@ -3901,6 +4591,22 @@ function extractMentions(text) {
     .filter(Boolean);
 }
 
+function normalizeTimecode(value) {
+  const text = String(value || "").trim();
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
+    return text;
+  }
+
+  const seconds = Number(text);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  return "00:00";
+}
+
 function proxyPathFor(projectId, filename) {
   const project = projectById(projectId);
   const base = project?.nasFolder || `projects/${project?.code || projectId}`;
@@ -3947,6 +4653,12 @@ function money(value) {
 function datePlus(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
+  return toISO(date);
+}
+
+function dateFrom(baseDate, days) {
+  const date = new Date(baseDate);
+  date.setDate(date.getDate() + Number(days || 0));
   return toISO(date);
 }
 
@@ -4112,6 +4824,14 @@ function splitList(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function listFromField(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : splitList(value);
+}
+
+function uniqueList(items) {
+  return Array.from(new Set(safeList(items).filter(Boolean)));
 }
 
 function clamp(value, min, max) {

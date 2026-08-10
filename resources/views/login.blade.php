@@ -27,22 +27,20 @@
           <div class="empty login-error">{{ $errors->first() }}</div>
         @endif
 
+        @if (session('status'))
+          <div class="empty login-success">{{ session('status') }}</div>
+        @endif
+
         <form method="post" action="{{ route('login.store') }}" class="login-form">
           @csrf
           <div class="form-field">
-            <label for="user_id">User</label>
-            <select id="user_id" name="user_id" required>
-              @foreach ($users as $user)
-                <option value="{{ $user->id }}" @selected(old('user_id') === $user->id)>
-                  {{ $user->name }} - {{ $user->role }} - {{ $user->department }}
-                </option>
-              @endforeach
-            </select>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" value="{{ old('email') }}" autocomplete="email" required autofocus>
           </div>
 
           <div class="form-field">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" value="password" required>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
 
           <button class="button primary" type="submit">Login</button>

@@ -75,7 +75,7 @@ The browser app loads state from:
 GET /api/state
 ```
 
-Every project, task, approval, asset, equipment booking, user, setting, and audit change is saved back through:
+Every project, video tracker item, task, QC remark, approval, server link, user, setting, and audit change is saved back through:
 
 ```text
 PUT /api/state
@@ -83,9 +83,9 @@ PUT /api/state
 
 Laravel stores the data in MySQL tables under `database/migrations`.
 
-## NAS Storage For Raw Footage
+## NAS Storage And Server Links
 
-Raw footage should live on the NAS, not in MySQL. MySQL stores the asset metadata only: project, filename, relative NAS path, file size, upload status, and processing status.
+Raw footage, audio, working project files, previews, and final exports should live on the NAS/file server, not in MySQL or the web app. MySQL stores tracking metadata only: project, filename, NAS/server path, file size, readiness status, proxy status, versions, QC records, approvals, audit logs, and publishing references.
 
 For Docker, map your NAS share on Windows first, for example as `Z:\CreativeMonitor`, then set:
 
@@ -108,26 +108,54 @@ If `NAS_HOST_PATH` is not set, Docker falls back to `./storage/app/nas` for loca
 The app now includes:
 
 - Project NAS folder generation for `raw`, `proxies`, `project-files`, `exports`, `briefs`, and `references`
-- Chunked browser uploads into the NAS mount
-- Asset proxy queue status and preview paths
+- Server-link registration for existing NAS paths
+- Proxy queue status and preview paths
 - Browser preview route for NAS-backed image/video proxy files
 - Project comments with `@mentions`
 - Project activity timelines
 - Project-level access members in addition to assigned teams
-- Asset version history records
+- Version history records for server-linked files
 
 Workflow API routes:
 
 ```text
 POST /api/projects/folders
-POST /api/assets/chunked/start
-POST /api/assets/chunked/{uploadId}/chunk
-POST /api/assets/chunked/{uploadId}/complete
 POST /api/assets/proxy/queue
 GET  /api/assets/{assetId}/stream
 ```
 
-Proxy generation is queued and tracked in the database. To make actual proxy files automatically, add an FFmpeg worker that reads `processing_status=proxy_needed`, creates the MP4 under the recorded `proxy_path`, then marks the asset `proxy_ready`.
+Proxy generation is queued and tracked in the database. The included FFmpeg worker reads `processing_status=proxy_needed`, creates the MP4 under the recorded `proxy_path`, then marks the asset `proxy_ready`.
+
+This project now includes that worker. After the Docker image is rebuilt, run:
+
+```bash
+docker compose exec app php artisan creative:process-proxies --limit=5
+```
+
+Useful options:
+
+```bash
+docker compose exec app php artisan creative:process-proxies --dry-run
+docker compose exec app php artisan creative:process-proxies --limit=20
+```
+
+The worker reads NAS-backed assets marked `proxy_needed`, creates browser-friendly MP4 previews with FFmpeg, updates the asset to `proxy_ready`, and sends database notifications to the assigned project team. If conversion fails, the asset is marked `proxy_failed`.
+
+## Device Notifications
+
+Users can enable browser/device alerts from the signed-in user strip inside the app. This uses the browser Notification API, so it works while the app is open or installed as a browser app/PWA. For true background phone push when the browser is closed, add a Web Push provider with HTTPS and VAPID keys.
+
+Notification events currently include:
+
+- Editing progress updates
+- QC remarks assigned, resolved, or reopened
+- Server link registered
+- Proxy queued, ready, or failed
+- Mentions in project comments
+
+## Timecoded QC
+
+The QC workspace now supports creating and editing timecoded remarks. Each remark stores video ID, category, severity, timecode, decision, assigned owner, repeated issue flag, resolution version, and status. Editors can acknowledge, mark fixed, or reopen remarks from the QC queue.
 
 ## FF Creative Hub Workflow Reference
 
@@ -144,14 +172,12 @@ The system still follows the PDF boundary: media files stay on the NAS/file serv
 ## Included Modules
 
 - Editor-friendly `My Work` view with assigned tasks, quick progress updates, ready-for-review handoff, and personal notifications
-- Admin-friendly command center for at-risk projects, blocked tasks, approval queues, workload watch, equipment status, and department notifications
+- Admin-friendly command center for at-risk projects, blocked tasks, approval queues, workload watch, publishing readiness, storage readiness, and department notifications
 - Dashboard KPIs and configurable widgets
 - Project register, workflow stage tracking, creative brief, milestones, deliverables
 - Task kanban with revision counts and status changes
 - Multi-level approval queue
-- Asset library with metadata, versioning, duplicate count, and download tracking
-- Equipment booking and return tracking
-- Calendar with project, task, approval, and equipment events
-- Team utilization and role overview
+- Server Links register with NAS paths, metadata, proxy readiness, versioning, and path-copy tracking
+- Staff utilization, roles, workload, and scorecard foundation
 - Reports with PDF print, Excel, and CSV export
 - Settings, security toggles, and audit log

@@ -27,23 +27,20 @@
           <div class="empty login-error"><?php echo e($errors->first()); ?></div>
         <?php endif; ?>
 
+        <?php if(session('status')): ?>
+          <div class="empty login-success"><?php echo e(session('status')); ?></div>
+        <?php endif; ?>
+
         <form method="post" action="<?php echo e(route('login.store')); ?>" class="login-form">
           <?php echo csrf_field(); ?>
           <div class="form-field">
-            <label for="user_id">User</label>
-            <select id="user_id" name="user_id" required>
-              <?php $__currentLoopData = $users; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $user): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
-                <option value="<?php echo e($user->id); ?>" <?php if(old('user_id') === $user->id): echo 'selected'; endif; ?>>
-                  <?php echo e($user->name); ?> - <?php echo e($user->role); ?> - <?php echo e($user->department); ?>
-
-                </option>
-              <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
-            </select>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" value="<?php echo e(old('email')); ?>" autocomplete="email" required autofocus>
           </div>
 
           <div class="form-field">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" value="password" required>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
 
           <button class="button primary" type="submit">Login</button>

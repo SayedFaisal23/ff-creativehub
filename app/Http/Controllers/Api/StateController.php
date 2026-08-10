@@ -13,10 +13,6 @@ class StateController
 {
     public function show(): JsonResponse
     {
-        if (DB::table('projects')->count() === 0) {
-            $this->persist(CreativeMonitorSeed::state());
-        }
-
         return response()->json($this->readState());
     }
 
@@ -179,6 +175,7 @@ class StateController
             'team' => DB::table('users')->orderBy('name')->get()->map(fn ($row) => [
                 'id' => $row->id,
                 'name' => $row->name,
+                'email' => $row->email,
                 'title' => $row->title,
                 'department' => $row->department,
                 'role' => $row->role,
@@ -496,9 +493,9 @@ class StateController
 
     private function canRoleOpenView(?string $role, ?string $view): bool
     {
-        $adminViews = ['dashboard', 'admin', 'projects', 'videos', 'tasks', 'qc', 'approvals', 'assets', 'equipment', 'calendar', 'team', 'reports', 'settings'];
-        $editorViews = ['editor', 'videos', 'tasks', 'projects', 'qc', 'assets', 'calendar', 'approvals'];
-        $clientViews = ['approvals', 'assets', 'calendar'];
+        $adminViews = ['dashboard', 'admin', 'projects', 'videos', 'tasks', 'qc', 'approvals', 'assets', 'team', 'reports', 'settings'];
+        $editorViews = ['editor', 'videos', 'tasks', 'projects', 'qc', 'assets', 'approvals'];
+        $clientViews = ['approvals', 'assets'];
 
         $allowed = match ($role) {
             'Admin', 'Manager', 'Director', 'Creative Manager', 'Project Manager', 'Coordinator' => $adminViews,

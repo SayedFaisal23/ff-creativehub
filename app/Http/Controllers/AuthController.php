@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Api\StateController;
-use App\Support\CreativeMonitorSeed;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,31 +17,59 @@ class AuthController
         }
 
         if (DB::table('users')->count() === 0) {
-            app(StateController::class)->update(Request::create('/api/state', 'PUT', CreativeMonitorSeed::state()));
+            return view('setup');
         }
 
-        $users = DB::table('users')
-            ->select('id', 'name', 'title', 'department', 'role')
-            ->orderByRaw("FIELD(role, 'Admin', 'Manager', 'Member', 'Freelancer', 'Limited')")
-            ->orderBy('name')
-            ->get();
+        return view('login');
+    }
 
-        return view('login', ['users' => $users]);
+    public function createFirstAdmin(Request $request): RedirectResponse
+    {
+        if (DB::table('users')->count() > 0) {
+            return redirect()->route('login');
+        }
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:180'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        DB::table('departments')->updateOrInsert(
+            ['name' => 'Creative Operations'],
+            ['created_at' => now(), 'updated_at' => now()],
+        );
+
+        DB::table('users')->insert([
+            'id' => 'admin-1',
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => Hash::make($data['password']),
+            'title' => 'System Admin',
+            'department' => 'Creative Operations',
+            'role' => 'Admin',
+            'utilization' => 0,
+            'skills' => '[]',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return redirect()->route('login')->with('status', 'Admin account created. Sign in to continue.');
     }
 
     public function login(Request $request): RedirectResponse
     {
         $credentials = $request->validate([
-            'user_id' => ['required', 'string'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        $user = DB::table('users')->where('id', $credentials['user_id'])->first();
+        $user = DB::table('users')->where('email', $credentials['email'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], (string) $user->password)) {
             return back()
-                ->withErrors(['password' => 'The selected user and password do not match.'])
-                ->withInput(['user_id' => $credentials['user_id']]);
+                ->withErrors(['email' => 'The email and password do not match.'])
+                ->withInput(['email' => $credentials['email']]);
         }
 
         $request->session()->regenerate();
